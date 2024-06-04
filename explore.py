@@ -691,6 +691,10 @@ def main():
         # Force number of threads for TVM
         os.environ["TVM_NUM_THREADS"] = str(args.threads)
 
+    # Workaround to ensure that TVM backend is after MLIR backends,
+    # otherwise the import of tvm breaks the MLIR python bindings
+    args.backends = sorted(args.backends)
+
     if args.eval == "eval":
         args.eval_parameters = get_eval_parameters(args)
 
