@@ -9,11 +9,24 @@ import numpy
 
 
 import mlir
-from mlir.ir import *  # TODO: segfault after TVM
+from mlir.ir import (
+    Module,
+    InsertionPoint,
+    Context,
+    Location,
+    F32Type,
+    F64Type,
+    MemRefType,
+    FunctionType,
+)
 
 from mlir.dialects import arith, builtin, func, linalg, tensor, bufferization, memref
 from xdsl.ir import Operation
 from xdsl.dialects.builtin import f32
+
+from xdsl.ir import Block as xdslBlock
+from xdsl.ir import Region as xdslRegion
+from xdsl.dialects import func as xdslfunc
 
 from PerfectlyNestedImplementer import PerfectlyNestedImplementer
 import transform
@@ -44,34 +57,17 @@ class MlirImplementer(PerfectlyNestedImplementer):
 
         if str(source_op.operands[0].type.get_element_type()) == "f32":
             self.elt_type = F32Type.get(context=self.ctx)
-            self.np_elt_type = numpy.float32
+            # self.np_elt_type = numpy.float32
         else:
             assert False
 
-        i = self.dims[self.parallel_dims[0]]
-        j = self.dims[self.parallel_dims[1]]
-        k = self.dims[self.reduction_dims[0]]
-
-        self.inputs_types = [
-            MemRefType.get(
-                shape=(i, k),
-                element_type=self.elt_type,
-                loc=self.loc,
-            ),
-            MemRefType.get(
-                shape=(k, j),
-                element_type=self.elt_type,
-                loc=self.loc,
-            ),
-        ]
-
-        self.outputs_types = [
-            MemRefType.get(
-                shape=(i, j),
-                element_type=self.elt_type,
-                loc=self.loc,
-            )
-        ]
+        with Context():
+            self.inputs_types = [
+                MemRefType.parse(str(i.type)) for i in self.source_op.inputs
+            ]
+            self.outputs_types = [
+                MemRefType.parse(str(i.type)) for i in self.source_op.outputs
+            ]
 
     def build_rtclock(self):
         f64 = F64Type.get(context=self.ctx)
@@ -95,31 +91,32 @@ class MlirImplementer(PerfectlyNestedImplementer):
             )
         return fprint
 
-    def build_operator(self, f_args):
-        if self.source_op.name == "linalg.matmul":
-            A = f_args[0]
-            B = f_args[1]
-            C = f_args[2]
-            scal = arith.ConstantOp(self.elt_type, 0.0)
-            linalg.fill(scal, outs=[C])
-            op = linalg.matmul(A, B, outs=[C])
-        else:
-            assert False
+    def xdsl_operator_to_function(self):
+        # Fetch data
+        operands = self.source_op.operands
+        operands_types = [o.type for o in operands]
+        #
+        payload = xdslBlock(arg_types=operands_types)
+        concrete_operands = list(payload.args)
+        value_mapper = {o: p for o, p in zip(operands, concrete_operands)}
 
-        return op
+        new_op = self.source_op.clone(value_mapper=value_mapper)
+        payload.add_ops([new_op, xdslfunc.Return()])
+        payload_func = xdslfunc.FuncOp.from_region(
+            self.payload_name, operands_types, [], xdslRegion(payload)
+        )
+        return payload_func
 
     def payload(self):
+        xdsl_func = self.xdsl_operator_to_function()
         with InsertionPoint.at_block_begin(self.module.body), self.loc as loc:
-            f = func.FuncOp(
-                name=self.payload_name,
-                type=FunctionType.get(
-                    inputs=self.inputs_types + self.outputs_types, results=[]
-                ),
-            )
-            entry_block = f.add_entry_block()
-        with InsertionPoint(entry_block), self.loc as loc:
-            self.build_operator(f.entry_block.arguments)
-            func.ReturnOp([])
+            f = func.FuncOp.parse(str(xdsl_func))
+        entry_block = f.regions[0].blocks[0]
+        outputs = entry_block.arguments[len(self.source_op.inputs) :]
+        with InsertionPoint.at_block_begin(entry_block), self.loc as loc:
+            scal = arith.ConstantOp(self.elt_type, 0.0)
+            for o in outputs:
+                linalg.fill(scal, outs=[o])
         return f
 
     def main(self, frtclock, fprint, fmatmul):
