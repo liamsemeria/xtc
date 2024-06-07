@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 The XTC Project Authors
 #
+# {"fastmath" = #arith.fastmath<contract>}
+
 from xdsl.dialects import func, linalg
 from xdsl.dialects.builtin import (
     TensorType,
