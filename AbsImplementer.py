@@ -98,30 +98,15 @@ class AbsImplementer(ABC):
         mlir_install_dir: str,
         vectors_size: int,
     ):
+        self.vectors_size = vectors_size
+        #
         self.ctx = Context()
         self.loc = Location.unknown(self.ctx)
         self.module = builtin.ModuleOp(loc=self.loc)
         self.module.operation.attributes["transform.with_named_sequence"] = (
             UnitAttr.get(context=self.ctx)
         )
-        #
-        self.vectors_size = vectors_size
-        #
-        self.shared_libs = [f"{mlir_install_dir}/lib/{lib}" for lib in runtime_libs]
-        self.cmd_run_mlir = [
-            f"{mlir_install_dir}/bin/mlir-cpu-runner",
-            *[f"-shared-libs={lib}" for lib in self.shared_libs],
-        ] + mlirrunner_opts
-        #
-        self.cmd_mlirtranslate = [
-            f"{mlir_install_dir}/bin/mlir-translate"
-        ] + mlirtranslate_opts
-        #
-        self.cmd_llc = [f"{mlir_install_dir}/bin/llc"] + llc_opts
-        #
-        self.cmd_opt = [f"{mlir_install_dir}/bin/opt"] + opt_opts
-        #
-        self.cmd_cc = [cc_bin]
+        self.payload_name = None
         #
         self.shared_libs = [f"{mlir_install_dir}/lib/{lib}" for lib in runtime_libs]
         self.shared_path = list(
@@ -129,7 +114,17 @@ class AbsImplementer(ABC):
                 [f"-Wl,--rpath={os.path.dirname(lib)}" for lib in self.shared_libs]
             )
         )
-
+        self.cmd_run_mlir = [
+            f"{mlir_install_dir}/bin/mlir-cpu-runner",
+            *[f"-shared-libs={lib}" for lib in self.shared_libs],
+        ] + mlirrunner_opts
+        self.cmd_mlirtranslate = [
+            f"{mlir_install_dir}/bin/mlir-translate"
+        ] + mlirtranslate_opts
+        self.cmd_llc = [f"{mlir_install_dir}/bin/llc"] + llc_opts
+        self.cmd_opt = [f"{mlir_install_dir}/bin/opt"] + opt_opts
+        self.cmd_cc = [cc_bin]
+        #
         self.cmds_history = []
 
     def build_disassemble_extra_opts(self, obj_file, color):
@@ -183,11 +178,9 @@ class AbsImplementer(ABC):
         disassemble_extra_opts = self.build_disassemble_extra_opts(
             obj_file=obj_file, color=color
         )
+        symbol = f"--disassemble={self.payload_name}" if self.payload_name else None
         disassemble_cmd = (
-            [objdump_bin]
-            + objdump_opts
-            + [f"--disassemble={self.payload_name}"]
-            + disassemble_extra_opts
+            [objdump_bin] + objdump_opts + [symbol] + disassemble_extra_opts
         )
         bc_process = self.execute_command(
             cmd=disassemble_cmd, pipe_stdoutput=False, debug=debug
