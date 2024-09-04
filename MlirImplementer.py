@@ -251,6 +251,7 @@ class MlirImplementer(AbsImplementer):
         return trans_script
 
     def integrate(self):
+        assert not self.integrated
         # Generate the transform script
         trans_script = MlirImplementer.pack_schedules(
             [self], sym_name="@__transform_main"
@@ -259,10 +260,7 @@ class MlirImplementer(AbsImplementer):
         with InsertionPoint(self.module.body):
             for o in trans_match.body.operations:
                 o.operation.clone()
-
-        # Glue
-        str_glued = str(self.module)
-        return str_glued
+        self.integrated = True
 
     def materialize_schedule(self, input_var):
         matched, match_attr = transform.match_by_attribute(
