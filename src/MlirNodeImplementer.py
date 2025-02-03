@@ -22,22 +22,19 @@ from MlirImplementer import MlirImplementer
 
 ty_tiles = dict[str, int]
 
-class MlirNodeImplementer(MlirImplementer):
 
+class MlirNodeImplementer(MlirImplementer):
     count = 0
 
     def __init__(
         self,
         source_op: xdslOperation,
-        payload_name: str = "f",
-            
         # TODO: Should become a list.
         dims: dict[str, int | None],
-            
         # TODO: Useless. Should be removed.
         parallel_dims: list[str],
         reduction_dims: list[str],
-            
+        payload_name: str = "f",
         concluding_passes: list[str] = [],
         loop_stamps: list[str] = [],
         always_vectorize: bool = True,
@@ -54,10 +51,10 @@ class MlirNodeImplementer(MlirImplementer):
         xdsl_func = xdsl_operator_to_function(source_op, payload_name)
         # Call the parent constructor
         super().__init__(
-            xdsl_func = xdsl_func,
-            concluding_passes = concluding_passes,
-            always_vectorize = always_vectorize,
-            no_alias = no_alias,
+            xdsl_func=xdsl_func,
+            concluding_passes=concluding_passes,
+            always_vectorize=always_vectorize,
+            no_alias=no_alias,
         )
         # Used for validation
         self.source_op = source_op
@@ -71,13 +68,15 @@ class MlirNodeImplementer(MlirImplementer):
         self.unrolling: dict[str, int] = dict([])
 
     def string_of_schedule(self) -> str:
-        return (f"dims: {self.dims},"
-                + f"tiles: {self.tiles},"
-                + f"order: {self.permutation},"
-                + f"vector: {self.vectorization},"
-                + f"parallel: {self.parallelization},"
-                + f"unrolling: {self.unrolling}")
-        
+        return (
+            f"dims: {self.dims},"
+            + f"tiles: {self.tiles},"
+            + f"order: {self.permutation},"
+            + f"vector: {self.vectorization},"
+            + f"parallel: {self.parallelization},"
+            + f"unrolling: {self.unrolling}"
+        )
+
     def loops(self) -> dict[str, int]:
         loops: dict[str, int] = dict()
         for tile_level in range(len(max(self.tiles.values(), key=len))):
@@ -98,12 +97,12 @@ class MlirNodeImplementer(MlirImplementer):
     ):
         tiles_names = []
         tiles_sizes = []
-        for tile_name,tile_size in tiles.items():
+        for tile_name, tile_size in tiles.items():
             if tile_size == 1:
                 tile_size = 0
             tiles_names.append(tile_name)
             tiles_sizes.append(tile_size)
-        
+
         dims = [dim] + tiles_names
         sizes = tiles_sizes + [1]
         for d, s in zip(dims, sizes):
@@ -118,14 +117,14 @@ class MlirNodeImplementer(MlirImplementer):
             # Identify the tile level
             tile_level = None
             for dim, tiles in self.tiles.items():
-                for i,(tile_name,tile_size) in enumerate(tiles.items()):
+                for i, (tile_name, tile_size) in enumerate(tiles.items()):
                     if tile_name == dim_vect:
                         tile_level = i
             assert not tile_level is None
             # Gather the tile level
             tiles_of_level = {}
             for dim, tiles in self.tiles.items():
-                for i,(tile_name,tile_size) in enumerate(tiles.items()):
+                for i, (tile_name, tile_size) in enumerate(tiles.items()):
                     if i == tile_level:
                         tiles_of_level[tile_name] = tile_size
             # In the general case, we vectorize the whole tile level,
@@ -135,11 +134,8 @@ class MlirNodeImplementer(MlirImplementer):
             # the generated code is too heavy and stresses the back-end's
             # parser.
             vectorize_all_level = True
-            for tile_name,tile_size in tiles_of_level.items():
-                if (
-                        tile_size > 64 or
-                        tile_size == 1
-                ):
+            for tile_name, tile_size in tiles_of_level.items():
+                if tile_size > 64 or tile_size == 1:
                     vectorize_all_level = False
             # Update the dimensions to be vectorized
             if vectorize_all_level:
@@ -152,17 +148,16 @@ class MlirNodeImplementer(MlirImplementer):
                 self.vectorization.append(dim_vect)
 
     def parallelize(self, parallelization: list[str]):
-        # TODO
-        ...
+        self.parallelization = parallelization
 
     def unroll(self, unrolling: dict[str, int]):
-        for dim,ufactor in unrolling.items():
+        for dim, ufactor in unrolling.items():
             if not dim in self.vectorization:
                 self.unrolling[dim] = ufactor
 
     def needs_vectorization(self):
         return len(self.vectorization) > 0
-        
+
     def generate_node_tiling(self, handle):
         # Produce the sequence of commands needed for the tiling
         tiling_arrays: dict[str, list[int]] = {}
@@ -207,7 +202,9 @@ class MlirNodeImplementer(MlirImplementer):
             # Annotate the resulting loop if successfully generated
             if len(tiling_command.results) > 1:
                 generated_loop = tiling_command.results[1]
-                transform.AnnotateOp(generated_loop, f"{self.op_id_attribute}{tile_name}")
+                transform.AnnotateOp(
+                    generated_loop, f"{self.op_id_attribute}{tile_name}"
+                )
                 all_loops.append(generated_loop)
             #
             op_to_tile = tiling_command.results[0]
@@ -247,7 +244,7 @@ class MlirNodeImplementer(MlirImplementer):
     @override
     def check_consistency(self):
         pass
-    
+
         # # Check the tiling
         # all_dims_sizes = {}
         # for dim, tiles in self.tiles.items():
@@ -261,7 +258,7 @@ class MlirNodeImplementer(MlirImplementer):
         #             assert  self.dims[dim] % tile_size == 0
         #             divided_dim = divided_dim // tile_size
         #         all_dims_sizes[tile_name] = tile_size
-                
+
         # Check the unrolling
         # TODO bug: the sizes in self.tiles are not the size of
         # the dim, but the size of the upper tile of the dim.
@@ -270,7 +267,7 @@ class MlirNodeImplementer(MlirImplementer):
         #     dim_size = all_dims_sizes[dim]
         #     assert dim_size >= ufactor
         #     assert dim_size % ufactor == 0
-    
+
     @classmethod
     def _np_types_spec(
         cls, types: list[xdslAnyMemRefType]
