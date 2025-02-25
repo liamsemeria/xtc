@@ -1319,7 +1319,7 @@ def main():
         default=OPERATORS["matmul"]["default_type"],
         help="data type",
     )
-    parser.add_argument("--trials", type=int, default=10000, help="num trials")
+    parser.add_argument("--trials", type=int, default=100, help="num trials")
     parser.add_argument("--threads", type=int, default=1, help="number of threads")
     parser.add_argument(
         "--max-unroll",
