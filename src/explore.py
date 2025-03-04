@@ -514,7 +514,7 @@ def tile_strategy_7d(impl, op_args, in_x):
     parallel_axes = None
     if THREADS > 1:
         parallel_axes = axes_order[:2]
-    unroll_axes = {"i3": tiles_i[-1], "k1": tiles_k[-1]}
+    unroll_axes = {"j3": tiles_j[-1], "i3": tiles_i[-1], "k1": tiles_k[-1]}
     logger.debug(
         "input: %s: tile i: %s, j: %s, k: %s, order: %s, vector: %s, parallel: %s, unroll: %s",
         in_x,
