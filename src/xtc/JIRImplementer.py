@@ -11,11 +11,11 @@ from copy import deepcopy
 import tempfile
 import subprocess
 
-import utils
-from evaluator import Evaluator, Executor
-from ndarray import NDArray
+import xtc.utils as utils
+from xtc.evaluator import Evaluator, Executor
+from xtc.ndarray import NDArray
 
-from ext_tools import (
+from xtc.ext_tools import (
     cc_bin,
     llc_opts,
     opt_opts,
@@ -23,8 +23,8 @@ from ext_tools import (
     shared_lib_opts,
 )
 
-from JIROps import Operation, Operators
-from JIRScheduler import JIRSchedulerAdaptor
+from xtc.JIROps import Operation, Operators
+from xtc.JIRScheduler import JIRSchedulerAdaptor
 
 from xdsl.printer import Printer
 from xdsl.dialects.builtin import ModuleOp, StringAttr

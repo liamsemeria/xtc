@@ -18,8 +18,8 @@ from mlir.dialects.transform import (
 )
 from mlir.dialects.transform.loop import loop_unroll
 from mlir.ir import UnitAttr, OpResult
-from xdsl_aux import xdsl_operator_to_function
-from MlirImplementer import MlirImplementer
+from xtc.xdsl_aux import xdsl_operator_to_function
+from xtc.MlirImplementer import MlirImplementer
 
 ty_tiles = dict[str, int]
 

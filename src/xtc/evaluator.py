@@ -4,9 +4,8 @@
 #
 import numpy as np
 import ctypes
-import utils
 
-import runtime
+import xtc.runtime as runtime
 
 __all__ = [
     "Evaluator",

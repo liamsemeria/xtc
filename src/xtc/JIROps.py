@@ -3,7 +3,7 @@
 # Copyright (c) 2024-2026 The XTC Project Authors
 #
 import numpy as np
-import utils
+import xtc.utils as utils
 
 
 class Operation:

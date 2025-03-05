@@ -16,7 +16,7 @@ from mlir.ir import (
 )
 from mlir.dialects import transform
 import numpy as np
-from xdsl_aux import brand_inputs_with_noalias
+from xtc.xdsl_aux import brand_inputs_with_noalias
 
 
 class RawMlirModule:
