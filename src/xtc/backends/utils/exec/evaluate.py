@@ -8,7 +8,9 @@ import numpy as np
 import numpy.typing
 
 from xtc.ndarray import NDArray
-import xtc.utils as utils
+from xtc.utils.loader import (
+    LibLoader,
+)
 import xtc.evaluator
 
 
@@ -27,7 +29,7 @@ def load_and_evaluate(
     repeat = kwargs.get("repeat", 1)
     number = kwargs.get("number", 1)
     min_repeat_ms = kwargs.get("min_repeat_ms", 0)
-    with utils.LibLoader(dll) as lib:
+    with LibLoader(dll) as lib:
         func = getattr(lib, sym)
         assert func is not None, f"Cannot find symbol {sym} in lib {dll}"
         func.packed = not bare_ptr

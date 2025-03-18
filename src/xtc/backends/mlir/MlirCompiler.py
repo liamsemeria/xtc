@@ -10,8 +10,7 @@ import os
 import tempfile
 import shutil
 from pathlib import Path
-from functools import partial
-import numpy as np
+
 
 from mlir.passmanager import PassManager
 from mlir.dialects import transform
@@ -24,13 +23,8 @@ from mlir.dialects.transform import (
 from mlir.dialects.transform.structured import structured_match
 from mlir.dialects.transform.loop import loop_unroll
 from mlir.ir import (
-    Type,
-    Context,
     Location,
     InsertionPoint,
-    FunctionType,
-    F64Type,
-    IntegerType,
     UnitAttr,
     OpResult,
 )
@@ -38,8 +32,10 @@ from mlir.ir import (
 
 from xtc.xdsl_aux import brand_inputs_with_noalias
 
-import xtc.utils as utils
-from xtc.evaluator import Evaluator, Executor
+from xtc.utils.tools import (
+    get_mlir_prefix,
+)
+
 from xtc.ext_tools import (
     transform_opts,
     lowering_opts,
@@ -137,9 +133,7 @@ class MlirModuleCompiler:
     ):
         self._mlir_module = mlir_module
         self._mlir_schedule = mlir_schedule
-        self.mlir_install_dir = utils.get_mlir_prefix(
-            kwargs.get("mlir_install_dir", None)
-        )
+        self.mlir_install_dir = get_mlir_prefix(kwargs.get("mlir_install_dir", None))
         self.to_disassemble = kwargs.get("to_disassemble", "")
         self.save_temps = kwargs.get("save_temps", False)
         self.save_temps_dir = kwargs.get("save_temps_dir", "./save_temps_dir")
