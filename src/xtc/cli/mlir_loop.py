@@ -9,7 +9,6 @@ from pathlib import Path
 from xdsl.dialects import func, builtin
 from xdsl.ir import (
     Operation,
-    Data,
 )
 
 from xtc.utils.xdsl_aux import parse_xdsl_module
@@ -151,10 +150,10 @@ def main():
         help="The target architecture.",
     )
     parser.add_argument(
-        "--microarch",
+        "--cpu",
         type=str,
         default="native",
-        help="The target microarchitecture.",
+        help="The target CPU.",
     )
     parser.add_argument(
         "--concluding-passes",
@@ -268,7 +267,7 @@ def main():
         debug=args.debug,
         dump_file=dump_file,
         arch=args.arch,
-        microarch=args.microarch,
+        cpu=args.cpu,
     )
     if args.evaluate:
         compiler_args.update(dict(shared_lib=True))
