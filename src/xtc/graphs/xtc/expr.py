@@ -17,6 +17,7 @@ from .operators import (
     XTCOperRelu,
     XTCOperConv2D,
     XTCOperPad2D,
+    XTCOperReshape,
 )
 
 __all__ = [
@@ -112,13 +113,12 @@ class XTCTensorExpr(XTCValueExpr):
     ) -> None:
         if tensor is None:
             type = XTCTensorType(shape=shape, dtype=dtype)
-            value = XTCTensor(type)
+            value = XTCTensor(type=type)
         elif isinstance(tensor, TensorType):
             value = XTCTensor(type=tensor)
         else:
             assert isinstance(tensor, XTCTensor)
             value = tensor
-
         super().__init__(value)
         self._op = XTCOperTensor()
 
@@ -167,17 +167,23 @@ class XTCOpExpr(XTCExpr):
 
     @override
     def forward_types(self, inputs_types: list[TensorType]) -> list[TensorType]:
-        assert len(inputs_types) == len(self.args)
+        assert len(inputs_types) == len(self.args), (
+            f"len of inputs types mismatch : {len(inputs_types)} == {len(self.args)}"
+        )
         return self._op.forward_types(inputs_types)
 
     @override
     def forward(self, inputs: list[Tensor]) -> list[Tensor]:
-        assert len(inputs) == len(self.args)
+        assert len(inputs) == len(self.args), (
+            f"len of inputs mismatch : {len(inputs)} == {len(self.args)}"
+        )
         return self._op.forward(inputs)
 
     @override
     def __str__(self) -> str:
-        args = ", ".join([f"%{arg._idx}" for arg in self.args])
+        params = [f"%{arg._idx}" for arg in self.args]
+        params += [f"{attr}={value}" for attr, value in self._op.attrs.__dict__.items()]
+        args = ", ".join(params)
         return f"%{self._idx} = {self.op_name}({args})"
 
 
@@ -211,3 +217,8 @@ class XTCConv2DExpr(XTCOpExpr):
 class XTCPad2DExpr(XTCOpExpr):
     def __init__(self, inp: XTCExpr, **attrs: Any) -> None:
         super().__init__(XTCOperPad2D(**attrs), (inp,))
+
+
+class XTCReshapeExpr(XTCOpExpr):
+    def __init__(self, x: XTCExpr, **attrs: Any) -> None:
+        super().__init__(XTCOperReshape(**attrs), (x,))
