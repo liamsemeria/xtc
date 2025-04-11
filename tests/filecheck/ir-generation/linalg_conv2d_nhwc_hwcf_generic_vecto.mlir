@@ -1,4 +1,4 @@
-// RUN: mlir-loop %s --no-alias --print-transformed-ir 2>&1 | filecheck %s
+// RUN: mlir-loop %s --vectors-size 8 --no-alias --print-transformed-ir 2>&1 | filecheck %s
 
 func.func @myfun(
   %I: memref<1x30x30x64xf32>,
@@ -25,7 +25,7 @@ func.func @myfun(
   outs(%O : memref<1x28x28x128xf32>)
   attrs = {
     loop.dims = ["n","h","w","f","r","s","c"],
-    loop.vectorize = ["h"]
+    loop.vectorize = ["n"]
   }
   {
     ^bb0(%0: f32, %1: f32, %2: f32) :
@@ -36,5 +36,5 @@ func.func @myfun(
   return
 }
 
-// CHECK-NOT: vector.transfer_read
-// CHECK-NOT: vector.transfer_write
+// CHECK: vector.transfer_read
+// CHECK: vector.transfer_write
