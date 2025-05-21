@@ -44,18 +44,18 @@ print(f"CODE: {res}")
 # CHECK-NEXT:    transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
 # CHECK-NEXT:      %0 = transform.structured.match attributes {__xtc_id_C_fill_} in %arg0 : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %tiled_linalg_op, %loops = transform.structured.tile_using_for %0 tile_sizes [1, 0] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %loops "__xtc_id_C_fill_i" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %loops "i" : !transform.any_op
 # CHECK-NEXT:      %tiled_linalg_op_0, %loops_1 = transform.structured.tile_using_for %tiled_linalg_op tile_sizes [0, 1] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %loops_1 "__xtc_id_C_fill_j" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %loops_1 "j" : !transform.any_op
 # CHECK-NEXT:      %1 = transform.structured.match attributes {__xtc_id_C_reduce_} in %arg0 : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %tiled_linalg_op_2, %loops_3 = transform.structured.tile_using_for %1 tile_sizes [0, 0, 1] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %loops_3 "__xtc_id_C_reduce_k" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %loops_3 "k" : !transform.any_op
 # CHECK-NEXT:      %tiled_linalg_op_4, %loops_5 = transform.structured.tile_using_for %tiled_linalg_op_2 tile_sizes [2, 0, 0] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %loops_5 "__xtc_id_C_reduce_i" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %loops_5 "i" : !transform.any_op
 # CHECK-NEXT:      %tiled_linalg_op_6, %loops_7 = transform.structured.tile_using_for %tiled_linalg_op_4 tile_sizes [0, 16, 0] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %loops_7 "__xtc_id_C_reduce_j" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %loops_7 "j" : !transform.any_op
 # CHECK-NEXT:      %tiled_linalg_op_8, %loops_9 = transform.structured.tile_using_for %tiled_linalg_op_6 tile_sizes [1, 0, 0] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %loops_9 "__xtc_id_C_reduce_i1" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %loops_9 "i1" : !transform.any_op
 # CHECK-NEXT:      transform.loop.unroll %loops_9 {factor = 2 : i64} : !transform.any_op
 # CHECK-NEXT:      %2 = transform.get_parent_op %loops_3 {isolated_from_above} : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %3 = transform.structured.vectorize_children_and_apply_patterns %2 : (!transform.any_op) -> !transform.any_op
@@ -85,8 +85,8 @@ print(f"CODE: {res}")
 # CHECK-NEXT:        scf.for %arg4 = %c0 to %c32 step %c1 {
 # CHECK-NEXT:          %subview_2 = memref.subview %subview[0, %arg4] [1, 1] [1, 1] : memref<1x32xf32, strided<[32, 1], offset: ?>> to memref<1x1xf32, strided<[32, 1], offset: ?>>
 # CHECK-NEXT:          vector.transfer_write %cst_1, %subview_2[%c0, %c0] {in_bounds = [true, true]} : vector<1x1xf32>, memref<1x1xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:        } {__xtc_id_C_fill_j}
-# CHECK-NEXT:      } {__xtc_id_C_fill_i}
+# CHECK-NEXT:        } {j}
+# CHECK-NEXT:      } {i}
 # CHECK-NEXT:      scf.for %arg3 = %c0 to %c512 step %c1 {
 # CHECK-NEXT:        %subview = memref.subview %arg0[0, %arg3] [4, 1] [1, 1] : memref<4x512xf32> to memref<4x1xf32, strided<[512, 1], offset: ?>>
 # CHECK-NEXT:        %subview_2 = memref.subview %arg1[%arg3, 0] [1, 32] [1, 1] : memref<512x32xf32> to memref<1x32xf32, strided<[32, 1], offset: ?>>
@@ -121,9 +121,9 @@ print(f"CODE: {res}")
 # CHECK-NEXT:            %16 = vector.fma %14, %12, %15 : vector<16xf32>
 # CHECK-NEXT:            %17 = vector.insert %16, %cst [0] : vector<16xf32> into vector<1x16xf32>
 # CHECK-NEXT:            vector.transfer_write %17, %subview_11[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:          } {__xtc_id_C_reduce_j}
-# CHECK-NEXT:        } {__xtc_id_C_reduce_i}
-# CHECK-NEXT:      } {__xtc_id_C_reduce_k}
+# CHECK-NEXT:          } {j}
+# CHECK-NEXT:        } {i}
+# CHECK-NEXT:      } {k}
 # CHECK-NEXT:      return
 # CHECK-NEXT:    }
 # CHECK-NEXT:  }
