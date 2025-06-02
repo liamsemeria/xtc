@@ -5,9 +5,8 @@
 #
 
 import argparse
-import re
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any
 from xdsl.dialects import func, builtin
 from xdsl.ir import Operation
 
@@ -26,17 +25,24 @@ def main():
         source = f.read()
 
     module = parse_xdsl_module(source)
-    myfunc = get_unique_function(module)
-    ops_to_schedule = get_annotated_operations(myfunc)
+    # Extract the only function of the module (or fail)
+    myfunc = None
+    for o in module.walk():
+        if isinstance(o, func.FuncOp):
+            assert myfunc is None
+            myfunc = o
+    assert myfunc
+    # Identify the scheduled operations
+    ops_to_schedule = [
+        op for op in myfunc.walk() if any("loop." in attr for attr in op.attributes)
+    ]
 
     # Build the transform script
-    get_scheduler = parse_scheduler_legacy if args.old_syntax else parse_scheduler
-    assert get_scheduler
     schedulers = []
     for idx, op in enumerate(ops_to_schedule):
         parsed_id = next((k for k in op.attributes if k.startswith("__")), None)
         node_name = parsed_id if parsed_id else f"__node{idx}__"
-        sched = get_scheduler(
+        sched = build_node_scheduler(
             op,
             node_name,
             always_vectorize=args.always_vectorize,
@@ -89,11 +95,9 @@ def main():
 
     if args.evaluate:
         if args.huge_pages:
-            NDArray.set_alloc_alignment(
-                2 * 1024 * 1024
-            )  # 2MB to catch Huge Pages if THB is one
+            NDArray.set_alloc_alignment(2 * 1024 * 1024)
         else:
-            NDArray.set_alloc_alignment(256)  # default align to 256 bytes as DLPack
+            NDArray.set_alloc_alignment(256)
         evaluator = module.get_evaluator(
             init_zero=args.init_zero,
             min_repeat_ms=100,
@@ -102,6 +106,35 @@ def main():
         if code != 0:
             raise RuntimeError(f"Evaluation failed: {err}")
         print(min(res))
+
+
+def build_node_scheduler(
+    op: Operation,
+    node_name: str,
+    always_vectorize: bool,
+    concluding_passes: list[str],
+    no_alias: bool,
+) -> Scheduler:
+    backend = build_mlir_node_backend(
+        op=op,
+        node_name=node_name,
+        always_vectorize=always_vectorize,
+        concluding_passes=concluding_passes,
+        no_alias=no_alias,
+    )
+
+    scheduler = backend.get_scheduler()
+    assert isinstance(scheduler.backend, MlirNodeBackend)
+
+    if "loop.schedule" in op.attributes:
+        schedule_attribute = op.attributes.get("loop.schedule")
+        assert isinstance(schedule_attribute, builtin.DictionaryAttr)
+        normal_schedule = normalize_schedule(schedule_attribute)
+        descript = Descript(scheduler=scheduler, initial_axis=scheduler.backend.dims)
+        descript.apply(node_name=node_name, spec=normal_schedule)
+        op.attributes.pop("loop.schedule", None)
+
+    return scheduler
 
 
 def normalize_schedule(
@@ -129,82 +162,7 @@ def normalize_schedule(
     return schedule
 
 
-def parse_scheduler(
-    op: Operation,
-    node_name: str,
-    always_vectorize: bool,
-    concluding_passes: list[str],
-    no_alias: bool,
-):
-    backend = parse_mlir_node_backend(
-        op=op,
-        node_name=node_name,
-        always_vectorize=always_vectorize,
-        concluding_passes=concluding_passes,
-        no_alias=no_alias,
-    )
-
-    scheduler = backend.get_scheduler()
-    assert isinstance(scheduler.backend, MlirNodeBackend)
-
-    if "loop.schedule" in op.attributes:
-        schedule_attribute = op.attributes.get("loop.schedule")
-        assert isinstance(schedule_attribute, builtin.DictionaryAttr)
-        normal_schedule = normalize_schedule(schedule_attribute)
-        descript = Descript(scheduler=scheduler, initial_axis=scheduler.backend.dims)
-        descript.apply(node_name=node_name, spec=normal_schedule)
-        remove_attribute(op, "loop.schedule")
-
-    return scheduler
-
-
-def parse_scheduler_legacy(
-    op: Operation,
-    node_name: str,
-    always_vectorize: bool,
-    concluding_passes: list[str],
-    no_alias: bool,
-):
-    backend = parse_mlir_node_backend(
-        op=op,
-        node_name=node_name,
-        always_vectorize=always_vectorize,
-        concluding_passes=concluding_passes,
-        no_alias=no_alias,
-    )
-
-    sched = backend.get_scheduler()
-
-    # Tiling
-    tile_attr = op.attributes.get("loop.tiles")
-    if tile_attr:
-        assert isinstance(tile_attr, builtin.DictionaryAttr)
-        for dim, tile_dict in tile_attr.data.items():
-            assert isinstance(tile_dict, builtin.DictionaryAttr)
-            sched.tile(
-                dim,
-                {
-                    k: v.value.data
-                    for k, v in tile_dict.data.items()
-                    if isinstance(k, str) and isinstance(v, builtin.IntegerAttr)
-                },
-            )
-        remove_attribute(op, "loop.tiles")
-
-    # Feed the scheduler
-    if "loop.interchange" in op.attributes:
-        sched.interchange(get_string_list_attribute(op, "loop.interchange"))
-    sched.vectorize(get_string_list_attribute(op, "loop.vectorize"))
-    sched.parallelize(get_string_list_attribute(op, "loop.parallelize"))
-    sched.unroll(get_string_int_dict_attribute(op, "loop.unroll"))
-
-    for a in ["interchange", "vectorize", "parallelize", "unroll"]:
-        remove_attribute(op, f"loop.{a}")
-
-    return sched
-
-
-def parse_mlir_node_backend(
+def build_mlir_node_backend(
     op: Operation,
     node_name: str,
     always_vectorize: bool,
@@ -215,7 +173,7 @@ def parse_mlir_node_backend(
     dims = get_string_list_attribute(op, "loop.dims")
     if not dims:
         raise ValueError("Missing loop.dims attribute")
-    remove_attribute(op, "loop.dims")
+    op.attributes.pop("loop.dims", None)
     # Additional attributes
     loop_stamps = get_string_list_attribute(op, "loop.add_attributes")
 
@@ -231,44 +189,12 @@ def parse_mlir_node_backend(
     )
 
 
-def remove_attribute(operation: Operation, attr_name: str):
-    operation.attributes.pop(attr_name, None)
-
-
-def get_unique_function(module: builtin.ModuleOp) -> func.FuncOp:
-    myfunc = None
-    for o in module.walk():
-        if isinstance(o, func.FuncOp):
-            assert myfunc is None
-            myfunc = o
-    assert myfunc
-    return myfunc
-
-
-def get_annotated_operations(myfunc: func.FuncOp) -> list[Operation]:
-    return [
-        op for op in myfunc.walk() if any("loop." in attr for attr in op.attributes)
-    ]
-
-
 def get_string_list_attribute(op: Operation, attr_name: str) -> list[str]:
     attr = op.attributes.get(attr_name)
     if not attr:
         return []
     assert isinstance(attr, builtin.ArrayAttr)
     return [elem.data for elem in attr.data if isinstance(elem, builtin.StringAttr)]
-
-
-def get_string_int_dict_attribute(op: Operation, attr_name: str) -> dict[str, int]:
-    attr = op.attributes.get(attr_name)
-    if not attr:
-        return {}
-    assert isinstance(attr, builtin.DictionaryAttr)
-    return {
-        key: val.value.data
-        for key, val in attr.data.items()
-        if isinstance(key, str) and isinstance(val, builtin.IntegerAttr)
-    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -365,11 +291,6 @@ def parse_args() -> argparse.Namespace:
         "--hide-jumps",
         action="store_true",
         help="Hide assembly visualization of control flow.",
-    )
-    parser.add_argument(
-        "--old-syntax",
-        action="store_true",
-        help="Parse the old version of the attributes dialect.",
     )
     parser.add_argument(
         "--debug", action="store_true", default=False, help="Print debug messages."
