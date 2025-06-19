@@ -4,7 +4,7 @@
 
 XTC is a domain specific dataflow graph compiler featuring operational DSL, scheduling DSL, multiple backends and autotuning.
 
-Refer to documentation at https://corse.gitlabpages.inria.fr/xtc
+Refer to documentation at https://corse.gitlabpages.inria.fr/XTC
 
 Refer to installable python packages at: https://gitlab.inria.fr/corse/xtc/-/packages
 
