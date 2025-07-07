@@ -87,17 +87,17 @@ class MlirScheduler(itf.schd.Scheduler):
         self, dim: str, segments: dict[str, int], root: str = DEFAULT_ROOT
     ) -> None:
         assert self._scheduler is not None
-        self._scheduler.split(dim, segments)
+        self._scheduler.split(dim, segments, root=root)
 
     @override
     def tile(self, dim: str, tiles: dict[str, int], root: str = DEFAULT_ROOT) -> None:
         assert self._scheduler is not None
-        self._scheduler.tile(dim, tiles)
+        self._scheduler.tile(dim, tiles, root=root)
 
     @override
     def interchange(self, permutation: list[str], root: str = DEFAULT_ROOT) -> None:
         assert self._scheduler is not None
-        self._scheduler.interchange(permutation)
+        self._scheduler.interchange(permutation, root=root)
 
     @override
     def buffer_at(
@@ -111,17 +111,17 @@ class MlirScheduler(itf.schd.Scheduler):
     @override
     def vectorize(self, axes: list[str], root: str = DEFAULT_ROOT) -> None:
         assert self._scheduler is not None
-        self._scheduler.vectorize(axes)
+        self._scheduler.vectorize(axes, root=root)
 
     @override
     def parallelize(self, axes: list[str], root: str = DEFAULT_ROOT) -> None:
         assert self._scheduler is not None
-        self._scheduler.parallelize(axes)
+        self._scheduler.parallelize(axes, root=root)
 
     @override
     def unroll(self, unrolls: dict[str, int], root: str = DEFAULT_ROOT) -> None:
         assert self._scheduler is not None
-        self._scheduler.unroll(unrolls)
+        self._scheduler.unroll(unrolls, root=root)
 
 
 class MlirSchedule(itf.schd.Schedule):
