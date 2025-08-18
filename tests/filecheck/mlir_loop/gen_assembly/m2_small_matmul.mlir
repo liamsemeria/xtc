@@ -1,4 +1,5 @@
 // RUN: mlir-loop --no-alias --arch aarch64 --cpu apple-m2 --print-assembly --hide-jumps %s 2>&1 | filecheck %s
+// XFAIL: mlir-target=c
 
 func.func @myfun(
   %A: memref<4x4xf32>,

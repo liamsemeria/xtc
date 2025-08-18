@@ -24,7 +24,7 @@ transform_opts = [
     "transform-interpreter",
 ]
 
-lowering_opts = [
+lowering_llvm_opts = [
     "canonicalize",
     "cse",
     "sccp",
@@ -64,7 +64,34 @@ lowering_opts = [
     "sccp",
 ]
 
+lowering_std_opts = [
+    "canonicalize",
+    "cse",
+    "sccp",
+    # From complex control to the soup of basic blocks
+    "expand-strided-metadata",
+    "convert-linalg-to-loops",
+    "lower-affine",
+    "convert-vector-to-scf{full-unroll=true}",
+    "scf-forall-to-parallel",
+    "convert-scf-to-openmp",
+    "canonicalize",
+    "cse",
+    "sccp",
+    # "convert-scf-to-cf",
+    "canonicalize",
+    "cse",
+    "sccp",
+    # Memory accesses
+    "buffer-results-to-out-params",
+    "canonicalize",
+    "cse",
+    "sccp",
+]
+
 mlirtranslate_opts = ["--mlir-to-llvmir"]
+
+xtctranslate_opts = ["--mlir-to-c"]
 
 llc_opts = [
     "-O3",
