@@ -22,53 +22,39 @@ utils.print_exhaustive_samples(backend, strategy, 200)
 
 # CHECK:       schedule O0: [1, 1, 1, 1, 1, 1, 1, 0]
 # CHECK-NEXT:  O = obj['%2']
-# CHECK-NEXT:  O_W0 = sch.cache_write(O, "local")
 # CHECK-NEXT:  i, j, = O.op.axis
 # CHECK-NEXT:  k, = O.op.reduce_axis
 # CHECK-NEXT:  i, i1 = sch[O].split(i, factor=1)
 # CHECK-NEXT:  j, j1 = sch[O].split(j, factor=1)
-# CHECK-NEXT:  i1, i_ = sch[O].split(i1, factor=1)
-# CHECK-NEXT:  j1, j_ = sch[O].split(j1, factor=1)
-# CHECK-NEXT:  sch[O].reorder(i, j, i1, j1, i_, j_)
+# CHECK-NEXT:  i1, i2 = sch[O].split(i1, factor=1)
+# CHECK-NEXT:  j1, j2 = sch[O].split(j1, factor=1)
+# CHECK-NEXT:  k, k1 = sch[O].split(k, factor=1)
+# CHECK-NEXT:  i2, i3 = sch[O].split(i2, factor=1)
+# CHECK-NEXT:  j2, j3 = sch[O].split(j2, factor=1)
+# CHECK-NEXT:  sch[O].reorder(i, j, i1, j1, k, i2, j2, k1, i3, j3)
+# CHECK-NEXT:  sch[O].unroll(j3)
+# CHECK-NEXT:  sch[O].unroll(i3)
+# CHECK-NEXT:  sch[O].unroll(k1)
+# CHECK-NEXT:  sch[O].vectorize(j3)
 # CHECK-NEXT:  sch[O].parallel(i)
-# CHECK-NEXT:  sch[O_W0].compute_at(sch[O], j1)
-# CHECK-NEXT:  i, j, = O_W0.op.axis
-# CHECK-NEXT:  k, = O_W0.op.reduce_axis
-# CHECK-NEXT:  i2 = i
-# CHECK-NEXT:  j2 = j
-# CHECK-NEXT:  k, k1 = sch[O_W0].split(k, factor=1)
-# CHECK-NEXT:  i2, i3 = sch[O_W0].split(i2, factor=1)
-# CHECK-NEXT:  j2, j3 = sch[O_W0].split(j2, factor=1)
-# CHECK-NEXT:  sch[O_W0].reorder(k, i2, j2, k1, i3, j3)
-# CHECK-NEXT:  sch[O_W0].unroll(j3)
-# CHECK-NEXT:  sch[O_W0].unroll(i3)
-# CHECK-NEXT:  sch[O_W0].unroll(k1)
-# CHECK-NEXT:  sch[O_W0].vectorize(j3)
 # CHECK-NEXT:  
 # CHECK-NEXT:  schedule O1: [1, 1, 1, 1, 1, 1, 1, 0]
 # CHECK-NEXT:  O = obj['%2']
-# CHECK-NEXT:  O_W0 = sch.cache_write(O, "local")
 # CHECK-NEXT:  i, j, = O.op.axis
 # CHECK-NEXT:  k, = O.op.reduce_axis
 # CHECK-NEXT:  i, i1 = sch[O].split(i, factor=1)
 # CHECK-NEXT:  j, j1 = sch[O].split(j, factor=1)
-# CHECK-NEXT:  i1, i_ = sch[O].split(i1, factor=1)
-# CHECK-NEXT:  j1, j_ = sch[O].split(j1, factor=1)
-# CHECK-NEXT:  sch[O].reorder(i, j, i1, j1, i_, j_)
+# CHECK-NEXT:  i1, i2 = sch[O].split(i1, factor=1)
+# CHECK-NEXT:  j1, j2 = sch[O].split(j1, factor=1)
+# CHECK-NEXT:  k, k1 = sch[O].split(k, factor=1)
+# CHECK-NEXT:  i2, i3 = sch[O].split(i2, factor=1)
+# CHECK-NEXT:  j2, j3 = sch[O].split(j2, factor=1)
+# CHECK-NEXT:  sch[O].reorder(i, j, i1, j1, k, i2, j2, k1, i3, j3)
+# CHECK-NEXT:  sch[O].unroll(j3)
+# CHECK-NEXT:  sch[O].unroll(i3)
+# CHECK-NEXT:  sch[O].unroll(k1)
+# CHECK-NEXT:  sch[O].vectorize(j3)
 # CHECK-NEXT:  sch[O].parallel(i)
-# CHECK-NEXT:  sch[O_W0].compute_at(sch[O], j1)
-# CHECK-NEXT:  i, j, = O_W0.op.axis
-# CHECK-NEXT:  k, = O_W0.op.reduce_axis
-# CHECK-NEXT:  i2 = i
-# CHECK-NEXT:  j2 = j
-# CHECK-NEXT:  k, k1 = sch[O_W0].split(k, factor=1)
-# CHECK-NEXT:  i2, i3 = sch[O_W0].split(i2, factor=1)
-# CHECK-NEXT:  j2, j3 = sch[O_W0].split(j2, factor=1)
-# CHECK-NEXT:  sch[O_W0].reorder(k, i2, j2, k1, i3, j3)
-# CHECK-NEXT:  sch[O_W0].unroll(j3)
-# CHECK-NEXT:  sch[O_W0].unroll(i3)
-# CHECK-NEXT:  sch[O_W0].unroll(k1)
-# CHECK-NEXT:  sch[O_W0].vectorize(j3)
 # CHECK-NEXT:  
 # CHECK-NEXT:  schedule O2: [1, 1, 1, 1, 1, 16, 1, 1]
 # CHECK-NEXT:  O = obj['%2']
