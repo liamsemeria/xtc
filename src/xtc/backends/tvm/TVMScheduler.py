@@ -22,12 +22,22 @@ class TVMScheduler(itf.schd.Scheduler):
         self,
         backend: "backend.TVMBackend",
         nodes: list[str] | None = None,
+        default_node: str | None = None,
     ) -> None:
         self._backend = backend
         if nodes is None:
-            self._op = list(backend._ops.values())[-1]
+            self._scheduled_ops = backend._ops
         else:
-            self._op = backend._ops[nodes[-1]]
+            self._scheduled_ops = {name: backend._ops[name] for name in nodes}
+        assert len(self._scheduled_ops) > 0
+        if default_node is None:
+            candidate_ops = list(self._scheduled_ops.values())
+        else:
+            assert default_node in self._scheduled_ops
+            candidate_ops = [
+                v for k, v in self._scheduled_ops.items() if k == default_node
+            ]
+        self._op = candidate_ops[-1]
         self.dims = self._op.operator.dims_sizes()
         self.parallel_dims = self._op.operator.dims("P")
         self.reduction_dims = self._op.operator.dims("R")

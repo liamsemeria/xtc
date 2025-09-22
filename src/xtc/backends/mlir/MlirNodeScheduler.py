@@ -47,7 +47,7 @@ class MlirNodeScheduler:
 
     def mlir_node_schedule(self) -> MlirNodeSchedule:
         if not self.permutation:
-            self.permutation["."] = self.get_default_interchange(".")
+            self.permutation[DEFAULT_ROOT] = self.get_default_interchange(DEFAULT_ROOT)
 
         return MlirNodeSchedule(
             node_name=self.node_name,
