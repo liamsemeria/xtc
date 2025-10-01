@@ -1,4 +1,4 @@
-// RUN: mlir-loop --vectors-size 8 --no-alias --print-source-ir %s 2>&1 | filecheck %s
+// RUN: mlir-loop --vectors-size 8 --no-alias --print-source-ir --print-transformed-ir %s 2>&1 | filecheck %s
 
 func.func @myfun(
   %I: memref<1x30x30x64xf32>,
@@ -95,3 +95,6 @@ func.func @myfun(
 // CHECK-NEXT:      transform.yield 
 // CHECK-NEXT:    }
 // CHECK-NEXT:  }
+// CHECK:       MLIR Error: NYI: non-trivial layout map
+// CHECK-NOT: vector.transfer_read
+// CHECK-NOT: vector.transfer_write

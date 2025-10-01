@@ -106,8 +106,7 @@ print(f"CODE: {res}")
 # CHECK-NEXT:      transform.yield 
 # CHECK-NEXT:    }
 # CHECK-NEXT:  }
-# CHECK-NEXT:  
-# CHECK-NEXT:  // -----// IR Dump After transform //----- //
+# CHECK:       // -----// IR Dump After transform //----- //
 # CHECK-NEXT:  #map = affine_map<(d0) -> (d0 * 2)>
 # CHECK-NEXT:  #map1 = affine_map<(d0, d1) -> (d0 * 2 + d1)>
 # CHECK-NEXT:  module attributes {transform.with_named_sequence} {
