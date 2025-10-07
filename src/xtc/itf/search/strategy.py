@@ -27,6 +27,7 @@ class Strategy(ABC):
 
     From a strategy, one can:
     - generate an exhaustive list of samples in the search space
+    - randomly sample the search space
     - get a default sample depending on some optimization level
     - actually schedule a Scheduler object for the given graph.
     """
@@ -65,13 +66,40 @@ class Strategy(ABC):
     def exhaustive(self) -> Iterator[Sample]:
         """Generates the exhaustive space of samples for this strategy.
 
-        The actual spoace size may be huge, hence it is not recommended
+        The actual space size may be huge, hence it is not recommended
         to convert this output to a list for instance without knowing
         the space size upperbound.
 
         Note that the returned samples are not randomized, hence the
         order is deterministic, though probably not suitable for
         random exploration unless all samples are retrieved.
+
+        Returns:
+            An iterator to the generated samples
+        """
+        ...
+
+    @abstractmethod
+    def sample(self, num: int, seed: int | None = 0) -> Iterator[Sample]:
+        """Generates unique random samples from this strategy.
+
+        The implementation should ensure that the search space
+        is sampled uniformly, i.e. each distinct point in the
+        search space should be equally probable.
+
+        The number of requested samples must be greater than 0.
+
+        If the seed provided is None, the generated sample list
+        is not deterministic.
+
+        Note that the returned number of samples may be less than
+        the requested number of sample either because:
+        - the search space is smaller than the requested number
+        - the stop condition for sampling distinct samples is reached
+
+        Args:
+            num: number of samples requested
+            seed: optional fixed seed, defaults to 0
 
         Returns:
             An iterator to the generated samples

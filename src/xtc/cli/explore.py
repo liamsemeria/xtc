@@ -479,21 +479,16 @@ def evaluate_all_parallel(
 
 def evaluate_generate(strategy: Strategy, graph: Graph, args: NS, callbacks: CallBacks):
     assert args.search in ["exhaustive", "random"]
-    all_in_x = strategy.exhaustive()
     if args.search == "random":
-        # TODO: for now randomize from exhaustive
-        all_in_x = np.array(list(all_in_x))
-        trials = (
-            args.trials
-            if args.trials and len(all_in_x) > args.trials
-            else len(all_in_x)
-        )
-        idxs = np.random.choice(np.arange(len(all_in_x)), size=trials, replace=False)
-        all_in_x = all_in_x[idxs]
-    elif args.trials:
-        all_in_x = np.array(list(itertools.islice(all_in_x, args.trials)))
+        assert args.trials > 0
+        sampled_x = strategy.sample(args.trials, args.seed)
+        all_in_x = np.array(list(sampled_x))
     else:
-        all_in_x = np.array(list(all_in_x))
+        all_in_x = strategy.exhaustive()
+        if args.trials:
+            all_in_x = np.array(list(itertools.islice(all_in_x, args.trials)))
+        else:
+            all_in_x = np.array(list(all_in_x))
     evaluate_all_parallel(strategy, all_in_x, graph, args, callbacks)
 
 
@@ -938,6 +933,9 @@ def main():
         help="debug compile commands",
     )
     parser.add_argument(
+        "--debug-xtc", action=argparse.BooleanOptionalAction, help="debug xtc modules"
+    )
+    parser.add_argument(
         "--quiet",
         action=argparse.BooleanOptionalAction,
         help="quiet optionnal output and progress bar",
@@ -951,6 +949,8 @@ def main():
     logger.setLevel(logging.INFO)
     if args.debug:
         logger.setLevel(logging.DEBUG)
+    if args.debug_xtc:
+        logging.getLogger("xtc").setLevel(logging.DEBUG)
 
     if not args.child:
         launch_child(sys.argv, args)
