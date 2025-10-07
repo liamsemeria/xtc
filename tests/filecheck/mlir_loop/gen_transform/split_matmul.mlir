@@ -41,8 +41,8 @@ func.func @myfun(
 // CHECK-NEXT:      %first, %second = transform.structured.split %tiled_linalg_op after 128  {dimension = 1 : i64} : !transform.any_op
 // CHECK-NEXT:      %tiled_linalg_op_0, %loops_1 = transform.structured.tile_using_for %first tile_sizes [0, 0, 1] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
 // CHECK-NEXT:      transform.annotate %loops_1 "__node0__/J[0]/K" : !transform.any_op
-// CHECK-NEXT:      transform.include @_vecto failures(suppress) (%tiled_linalg_op_0) : (!transform.any_op) -> ()
 // CHECK-NEXT:      %1 = transform.get_parent_op %loops_1 {isolated_from_above} : (!transform.any_op) -> !transform.any_op
+// CHECK-NEXT:      transform.include @_vecto failures(suppress) (%tiled_linalg_op_0) : (!transform.any_op) -> ()
 // CHECK-NEXT:      transform.apply_patterns to %1 {
 // CHECK-NEXT:        transform.apply_patterns.vector.reduction_to_contract
 // CHECK-NEXT:        transform.apply_patterns.vector.transfer_permutation_patterns
@@ -53,8 +53,8 @@ func.func @myfun(
 // CHECK-NEXT:      } : !transform.any_op
 // CHECK-NEXT:      %tiled_linalg_op_2, %loops_3 = transform.structured.tile_using_for %second tile_sizes [0, 0, 1] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
 // CHECK-NEXT:      transform.annotate %loops_3 "__node0__/J[1]/K" : !transform.any_op
-// CHECK-NEXT:      transform.include @_vecto failures(suppress) (%tiled_linalg_op_2) : (!transform.any_op) -> ()
 // CHECK-NEXT:      %2 = transform.get_parent_op %loops_3 {isolated_from_above} : (!transform.any_op) -> !transform.any_op
+// CHECK-NEXT:      transform.include @_vecto failures(suppress) (%tiled_linalg_op_2) : (!transform.any_op) -> ()
 // CHECK-NEXT:      transform.apply_patterns to %2 {
 // CHECK-NEXT:        transform.apply_patterns.vector.reduction_to_contract
 // CHECK-NEXT:        transform.apply_patterns.vector.transfer_permutation_patterns

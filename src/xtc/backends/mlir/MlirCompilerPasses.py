@@ -278,13 +278,6 @@ class MlirProgramInsertTransformPass:
                     # Annotate the resulting loop if successfully generated
                     transform.AnnotateOp(new_loop, loop_name)
 
-        if set(permutation) & set(schedule.vectorization) and not self._super_vectorize:
-            transform.IncludeOp(
-                results_=[],
-                target=_VECTO_SEQ_NAME,
-                failure_propagation_mode=2,
-                operands_=[current_handle],
-            )
         # The resulting operation is either the outermost loop or
         # the initial (not tiled) handle
         if all_loops:
@@ -297,6 +290,18 @@ class MlirProgramInsertTransformPass:
             handle_after_tiling,
             isolated_from_above=True,
         )
+
+        if (
+            set(permutation) & set(schedule.vectorization)
+            and self._vectors_size is None
+        ):
+            transform.IncludeOp(
+                results_=[],
+                target=_VECTO_SEQ_NAME,
+                failure_propagation_mode=2,
+                operands_=[current_handle],
+            )
+
         if schedule.vectorization or self._always_vectorize:
             with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
                 vector.ApplyVectorReductionToContractPatternsOp()
