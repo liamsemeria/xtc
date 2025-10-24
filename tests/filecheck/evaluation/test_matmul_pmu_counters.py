@@ -33,7 +33,8 @@ pmu_counters = [
     "cycles",
 ]
 
-if platform == "linux" or platform == "linux2":
+# Linux Perf counters
+if platform == "linux":
     pmu_counters += [
         "clocks",
         "mem_load_retired.l1_miss",
