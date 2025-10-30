@@ -15,7 +15,7 @@ dev = [
     "mypy==1.15.0",
     "pytest",
     "pytest-xdist",
-    "pyright==1.1.403",
+    "pyright==1.1.407",
     "marimo==0.14.16",
 ]
 
