@@ -86,10 +86,12 @@ int open_perf_event(perf_event_args_t event) {
   if (event.mode == PERF_ARG_GENERIC) {
     struct perf_event_attr attr;
     init_perf_event_attr(&attr);
+    attr.type = event.args.config_pair.type;
+    attr.config = event.args.config_pair.event;
     return sys_perf_event_open(&attr, 0 /*pid*/, -1 /*cpu*/, -1 /*group_fd*/,
                                0 /*flags*/);
   } else {
-    local_pfm_perf_encode_arg_t * perf_gen =   (local_pfm_perf_encode_arg_t *)event.args.config_ptr;
+    local_pfm_perf_encode_arg_t *perf_gen = (local_pfm_perf_encode_arg_t *)event.args.config_ptr;
     return sys_perf_event_open(perf_gen->attr,
                                0 /*pid*/, perf_gen->cpu /*cpu*/, -1 /*group_fd*/,
                                perf_gen->flags /*flags*/);
