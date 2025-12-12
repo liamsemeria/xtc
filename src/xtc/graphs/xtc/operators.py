@@ -198,6 +198,69 @@ class XTCOperRelu(XTCOperator):
         return [relu]
 
 
+class XTCOperAdd(XTCOperator):
+    def __init__(self, **attrs: XTCOperatorAttr) -> None:
+        super().__init__("add", **attrs)
+
+    @override
+    def forward_types(
+        self, inputs_types: Sequence[TensorType]
+    ) -> Sequence[XTCTensorType]:
+        assert len(inputs_types) == 2
+        assert inputs_types[0].shape is not None
+        assert inputs_types[1].shape is not None
+        # uses check if shapes can broadcast or not
+        l_shape = list(cast(XTCTensorType, inputs_types[0]).constant_shape)
+        r_shape = list(cast(XTCTensorType, inputs_types[1]).constant_shape)
+        # check if same size, otherwise pad smaller with 1s on the left
+        max_len = max(len(l_shape), len(r_shape))
+        assert max_len <= 4
+        l_shape = [1] * (max_len - len(l_shape)) + l_shape
+        r_shape = [1] * (max_len - len(r_shape)) + r_shape
+        result_shape = []
+        # for each dim, check if either equal or one dim is one
+        # resulting size is non-1 of each dim
+        for d in range(max_len):
+            assert l_shape[d] == r_shape[d] or min(l_shape[d], r_shape[d]) == 1
+            result_shape.append(max(l_shape[d], r_shape[d]))
+        return [
+            XTCTensorType(
+                shape=tuple(result_shape),
+                dtype=inputs_types[0].dtype,
+            ),
+        ]
+
+    @override
+    def get_operation(
+        self,
+        inps_types: Sequence[XTCTensorType],
+        outs_types: Sequence[XTCTensorType],
+    ) -> XTCOperation:
+        l_shape = inps_types[0].constant_shape
+        r_shape = inps_types[1].constant_shape
+        # l = functools.reduce(operator.mul, l_shape, 1)
+        l = inps_types[0].size()
+        # r = functools.reduce(operator.mul, r_shape, 1)
+        r = inps_types[1].size()
+        return self._get_operation(
+            inps_types,
+            outs_types,
+            dims={"i": max(l, r)},
+            kinds=("P",),
+            inps_maps=(("i",)),
+            outs_maps=(("i",)),
+        )
+
+    @override
+    def forward(self, inputs: Sequence[Tensor]) -> Sequence[XTCTensor]:
+        add = XTCTensor(inputs[0].numpy() + inputs[1].numpy())
+        expected_type = self.forward_types([inp.type for inp in inputs])[0]
+        assert add.type == expected_type, (
+            f"output type mismatch expect: {matmul.type} != {expected_type}"
+        )
+        return [add]
+
+
 class XTCOperConv2D(XTCOperator):
     def __init__(self, **attrs: XTCOperatorAttr) -> None:
         super().__init__("conv2d", **attrs)
