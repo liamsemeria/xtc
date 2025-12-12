@@ -17,6 +17,7 @@ from .expr import (
     XTCPadExpr,
     XTCReshapeExpr,
     XTCTransposeExpr,
+    XTCAddExpr,
 )
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "relu",
     "reshape",
     "transpose",
+    "add",
     "tensor",
     "inputs",
     "outputs",
@@ -89,6 +91,13 @@ def reshape(inp: XTCExpr, name: str | None = None, **attrs: Any) -> XTCExpr:
 def transpose(inp: XTCExpr, name: str | None = None, **attrs: Any) -> XTCExpr:
     return XTCGraphContext.append(
         XTCTransposeExpr(inp, **attrs),
+        name=name,
+    )
+
+
+def add(a: XTCExpr, b: XTCExpr, name: str | None = None, **attrs: Any) -> XTCExpr:
+    return XTCGraphContext.append(
+        XTCAddExpr(a, b, **attrs),
         name=name,
     )
 
