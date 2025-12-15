@@ -155,3 +155,21 @@ def estimate_count_prob_smooth(
     if alpha == 0 and sample_size == 0:
         return 0
     return (count + alpha) / (sample_size + alpha)
+
+
+def get_broadcasted_shape(lsize: tuple[int], rsize: tuple[int]) -> tuple[int]:
+    max_rank = max(len(lsize), len(rsize))
+    lpad = (1,) * (max_rank - len(lsize)) + lsize
+    rpad = (1,) * (max_rank - len(rsize)) + rsize
+
+    out_shape = []
+
+    for i, (l, r) in enumerate(zip(lpad, rpad)):
+        if l == r or l == 1 or r == 1:
+            out_shape.append(max(l, r))
+        else:
+            raise ValueError(
+                f"Incompatible dimensions at axis {-max_rank + i}: {l} vs {r}"
+            )
+
+    return tuple(out_shape)

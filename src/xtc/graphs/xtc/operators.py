@@ -12,6 +12,7 @@ import numpy as np
 
 from xtc.itf.operator import Operator
 from xtc.itf.data import Tensor, TensorType
+from xtc.utils.math import get_broadcasted_shape
 
 from .data import XTCTensor, XTCTensorType
 from .operation import XTCOperation
@@ -209,23 +210,16 @@ class XTCOperAdd(XTCOperator):
         assert len(inputs_types) == 2
         assert inputs_types[0].shape is not None
         assert inputs_types[1].shape is not None
-        # uses check if shapes can broadcast or not
-        l_shape = list(cast(XTCTensorType, inputs_types[0]).constant_shape)
-        r_shape = list(cast(XTCTensorType, inputs_types[1]).constant_shape)
-        # check if same size, otherwise pad smaller with 1s on the left
+        l_shape = cast(XTCTensorType, inputs_types[0]).constant_shape
+        r_shape = cast(XTCTensorType, inputs_types[1]).constant_shape
+
         max_len = max(len(l_shape), len(r_shape))
         assert max_len <= 4
-        l_shape = [1] * (max_len - len(l_shape)) + l_shape
-        r_shape = [1] * (max_len - len(r_shape)) + r_shape
-        result_shape = []
-        # for each dim, check if either equal or one dim is one
-        # resulting size is non-1 of each dim
-        for d in range(max_len):
-            assert l_shape[d] == r_shape[d] or min(l_shape[d], r_shape[d]) == 1
-            result_shape.append(max(l_shape[d], r_shape[d]))
+        # will return an error if shapes cant be broadcasted
+        result_shape = get_broadcasted_shape(l_shape, r_shape)
         return [
             XTCTensorType(
-                shape=tuple(result_shape),
+                shape=result_shape,
                 dtype=inputs_types[0].dtype,
             ),
         ]
