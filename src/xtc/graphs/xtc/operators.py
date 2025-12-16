@@ -232,10 +232,8 @@ class XTCOperAdd(XTCOperator):
     ) -> XTCOperation:
         l_shape = inps_types[0].constant_shape
         r_shape = inps_types[1].constant_shape
-        # l = functools.reduce(operator.mul, l_shape, 1)
-        l = inps_types[0].size()
-        # r = functools.reduce(operator.mul, r_shape, 1)
-        r = inps_types[1].size()
+        l = functools.reduce(operator.mul, l_shape, 1)
+        r = functools.reduce(operator.mul, r_shape, 1)
         return self._get_operation(
             inps_types,
             outs_types,

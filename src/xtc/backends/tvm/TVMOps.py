@@ -9,7 +9,7 @@ from typing import Any, Type, TypeAlias
 import tarfile
 import shutil
 
-from xtc.utils.math import mulall
+from xtc.utils.math import mulall, get_broadcasted_shape
 from xtc.utils.host_tools import target_triple
 
 from xtc.itf.graph import Operation, Graph, Node
@@ -726,6 +726,81 @@ class TVMOperatorTranspose(TVMOperator):
         return (dtype,)
 
 
+class TVMOperatorAdd(TVMOperator):
+    DEFAULT_NAME = "add"
+    AXES = "i"
+    KINDS = "P"
+
+    def __init__(
+        self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
+    ) -> None:
+        attrs = {**attrs}
+        super().__init__(args, attrs, name)
+
+    @override
+    def dims(self, kind: str = "") -> tuple[str, ...]:
+        return self._dims(kind)
+
+    @override
+    def dims_sizes(self) -> dict[str, int]:
+        i, _ = self.args
+        return {"i": i}
+
+    @override
+    def generate_op(
+        self, inputs: Sequence[TETensor] | None = None
+    ) -> tuple[TETensor, ...]:
+        Ki, dtype = self.args
+        if inputs is None:
+            L = te.placeholder((Ki,), name="L", dtype=dtype)
+            R = te.placeholder((Ki,), name="R", dtype=dtype)
+        else:
+            L, R = inputs
+
+        Lshape = tuple(L.shape)
+        Rshape = tuple(R.shape)
+        out_shape = Lshape
+
+        if Lshape != Rshape:
+            out_shape = get_broadcasted_shape(Lshape, Rshape)
+            if Lshape != out_shape:
+                L = topi.broadcast_to(L, out_shape)
+            if Rshape != out_shape:
+                R = topi.broadcast_to(R, out_shape)
+
+        size = mulall(out_shape)
+        L = topi.reshape(L, newshape=(size,))
+        R = topi.reshape(R, newshape=(size,))
+        O = te.compute(
+            (Ki,),
+            tvm.topi.add(L, R),
+            name=self.name,
+        )
+        O = topi.reshape(O, newshape=out_shape)
+
+        return L, R, O
+
+    @override
+    def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        i, _ = self.args
+        return ((i,),)
+
+    @override
+    def inputs_types(self) -> tuple[str, ...]:
+        _, dtype = self.args
+        return (dtype,)
+
+    @override
+    def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        i, _ = self.args
+        return ((i,),)
+
+    @override
+    def outputs_types(self) -> tuple[str, ...]:
+        _, dtype = self.args
+        return (dtype,)
+
+
 class TVMOperators:
     @classmethod
     def from_name(cls, name: str) -> Type[TVMOperator]:
@@ -737,3 +812,4 @@ class TVMOperators:
     conv2d = TVMOperatorConv2D
     pad2d = TVMOperatorPad2D
     transpose = TVMOperatorTranspose
+    add = TVMOperatorAdd
