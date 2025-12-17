@@ -892,20 +892,21 @@ class TVMOperatorAdd(TVMOperator):
         Lshape = tuple(L.shape)
         Rshape = tuple(R.shape)
         out_shape = Lshape
-
+        Lc = L
+        Rc = R
         if Lshape != Rshape:
             out_shape = get_broadcasted_shape(Lshape, Rshape)
             if Lshape != out_shape:
-                L = topi.broadcast_to(L, out_shape)
+                Lc = topi.broadcast_to(Lc, out_shape)
             if Rshape != out_shape:
-                R = topi.broadcast_to(R, out_shape)
+                Rc = topi.broadcast_to(Rc, out_shape)
 
         size = mulall(out_shape)
-        L = topi.reshape(L, newshape=(size,))
-        R = topi.reshape(R, newshape=(size,))
+        Lc = topi.reshape(Lc, newshape=(size,))
+        Rc = topi.reshape(Rc, newshape=(size,))
         O = te.compute(
             (Ki,),
-            tvm.topi.add(L, R),
+            tvm.topi.add(Lc, Rc),
             name=self.name,
         )
         O = topi.reshape(O, newshape=out_shape)
