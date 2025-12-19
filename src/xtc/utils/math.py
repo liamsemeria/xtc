@@ -158,6 +158,9 @@ def estimate_count_prob_smooth(
 
 
 def get_broadcasted_shape(lsize: tuple[int], rsize: tuple[int]) -> tuple[int]:
+    """
+    Returns the result shape of a broadcast given the shapes of 2 input tensors.
+    """
     max_rank = max(len(lsize), len(rsize))
     lpad = (1,) * (max_rank - len(lsize)) + lsize
     rpad = (1,) * (max_rank - len(rsize)) + rsize
