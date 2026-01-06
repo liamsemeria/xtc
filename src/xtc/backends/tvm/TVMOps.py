@@ -901,12 +901,12 @@ class TVMOperatorAdd(TVMOperator):
             if Rshape != out_shape:
                 Rc = topi.broadcast_to(Rc, out_shape)
 
-        size = mulall(out_shape)
+        size = mulall(list(out_shape))
         Lc = topi.reshape(Lc, newshape=(size,))
         Rc = topi.reshape(Rc, newshape=(size,))
         O = te.compute(
             (Ki,),
-            tvm.topi.add(Lc, Rc),
+            topi.add(Lc, Rc),
             name=self.name,
         )
         O = topi.reshape(O, newshape=out_shape)

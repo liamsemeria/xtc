@@ -248,7 +248,7 @@ class XTCOperAdd(XTCOperator):
         add = XTCTensor(inputs[0].numpy() + inputs[1].numpy())
         expected_type = self.forward_types([inp.type for inp in inputs])[0]
         assert add.type == expected_type, (
-            f"output type mismatch expect: {matmul.type} != {expected_type}"
+            f"output type mismatch expect: {add.type} != {expected_type}"
         )
         return [add]
 
