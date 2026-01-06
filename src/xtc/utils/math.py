@@ -157,7 +157,7 @@ def estimate_count_prob_smooth(
     return (count + alpha) / (sample_size + alpha)
 
 
-def get_broadcasted_shape(lsize: tuple[int], rsize: tuple[int]) -> tuple[int]:
+def get_broadcasted_shape(lsize: tuple[int, ...], rsize: tuple[int, ...]) -> tuple[int, ...]:
     """
     Returns the result shape of a broadcast given the shapes of 2 input tensors.
     """
