@@ -2,8 +2,8 @@
 set -e
 
 NUM=0
-MODEL_NAME="alexnet"
-OP="matmul"
+MODEL_NAME="alexnet" # alexnet, squeezenet
+OP="matmul" # matmul, conv2d
 OP_NAME="${MODEL_NAME}${OP}_$NUM"
 
 OUT_DIR="data"
