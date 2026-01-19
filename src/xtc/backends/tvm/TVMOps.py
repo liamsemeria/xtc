@@ -579,162 +579,6 @@ class TVMOperatorConv2D(TVMOperator):
         return (dtype,)
 
 
-class TVMOperatorPad2D(TVMOperator):
-    DEFAULT_NAME = "pad2d"
-    AXES = "ij"
-    KINDS = "PP"
-
-    def __init__(
-        self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
-    ) -> None:
-        attrs = {**attrs}
-        super().__init__(args, attrs, name)
-
-    @override
-    def dims(self, kind: str = "") -> tuple[str, ...]:
-        return self._dims(kind)
-
-    @override
-    def dims_sizes(self) -> dict[str, int]:
-        return {f"d{i}": size for i, size in enumerate(self.args[:-1])}
-
-    @override
-    def generate_op(
-        self, inputs: Sequence[TETensor] | None = None
-    ) -> tuple[TETensor, ...]:
-        dtype = self.args[-1]
-        dims_values = list(self.args[:-1])
-        hb, he, wb, we = self.attrs["padding"]
-        axis1, axis2 = self.attrs["axes"]
-        constant_value = self.attrs["constant_value"]
-        ha, wa = dims_values[axis1] - hb - he, dims_values[axis2] - wb - we
-        if inputs is None:
-            dims_values_before_pad = list(dims_values)
-            dims_values_before_pad[axis1], dims_values_before_pad[axis2] = ha, wa
-            A = te.placeholder(tuple(dims_values_before_pad), name="A", dtype=dtype)
-        else:
-            (A,) = inputs
-
-        def get_indexes(*args: int) -> tuple[int, ...]:
-            indexes = list(args)
-            indexes[axis1] -= hb
-            indexes[axis2] -= wb
-            return tuple(indexes)
-
-        O = te.compute(
-            tuple(dims_values),
-            lambda *args: (
-                tvm.tir.if_then_else(
-                    tvm.tir.all(
-                        args[axis1] - hb >= 0,
-                        args[axis1] - hb < ha,
-                        args[axis2] - wb >= 0,
-                        args[axis2] - wb < wa,
-                    ),
-                    A[get_indexes(*args)],
-                    constant_value,
-                )
-            ),
-            name=self.name,
-        )
-        return A, O
-
-    @override
-    def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        hb, he, wb, we = self.attrs["padding"]
-        axis1, axis2 = self.attrs["axes"]
-        inp_dims = list(self.args[:-1])
-        inp_dims[axis1] -= hb + he
-        inp_dims[axis2] -= wb + we
-        return (tuple(inp_dims),)
-
-    @override
-    def inputs_types(self) -> tuple[str, ...]:
-        _, dtype = self.args
-        return (dtype,)
-
-    @override
-    def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        return (self.args[:-1],)
-
-    @override
-    def outputs_types(self) -> tuple[str, ...]:
-        _, dtype = self.args
-        return (dtype,)
-
-
-class TVMOperatorUnpad2D(TVMOperator):
-    DEFAULT_NAME = "unpad2d"
-    AXES = "ij"
-    KINDS = "PP"
-
-    def __init__(
-        self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
-    ) -> None:
-        attrs = {**attrs}
-        super().__init__(args, attrs, name)
-
-    @override
-    def dims(self, kind: str = "") -> tuple[str, ...]:
-        return self._dims(kind)
-
-    @override
-    def dims_sizes(self) -> dict[str, int]:
-        return {f"d{i}": size for i, size in enumerate(self.args[:-1])}
-
-    @override
-    def generate_op(
-        self, inputs: Sequence[TETensor] | None = None
-    ) -> tuple[TETensor, ...]:
-        dtype = self.args[-1]
-        dims_values = list(self.args[:-1])
-        hb, he, wb, we = self.attrs["padding"]
-        axis1, axis2 = self.attrs["axes"]
-        ha, wa = dims_values[axis1] + hb + he, dims_values[axis2] + wb + we
-        if inputs is None:
-            dims_values_after_unpad = list(dims_values)
-            dims_values_after_unpad[axis1], dims_values_after_unpad[axis2] = ha, wa
-            A = te.placeholder(tuple(dims_values_after_unpad), name="A", dtype=dtype)
-        else:
-            (A,) = inputs
-
-        def get_indexes(*args: int) -> tuple[int, ...]:
-            indexes = list(args)
-            indexes[axis1] += hb
-            indexes[axis2] += wb
-            return tuple(indexes)
-
-        O = te.compute(
-            tuple(dims_values),
-            lambda *args: A[get_indexes(*args)],
-            name=self.name,
-        )
-        return A, O
-
-    @override
-    def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        hb, he, wb, we = self.attrs["padding"]
-        axis1, axis2 = self.attrs["axes"]
-        inp_dims = list(self.args[:-1])
-        inp_dims[axis1] += hb + he
-        inp_dims[axis2] += wb + we
-        return (tuple(inp_dims),)
-
-    @override
-    def inputs_types(self) -> tuple[str, ...]:
-        _, dtype = self.args
-        return (dtype,)
-
-    @override
-    def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        return self.args[:-1]
-
-    @override
-    def outputs_types(self) -> tuple[str, ...]:
-        _, dtype = self.args
-        return (dtype,)
-
-
 class TVMOperatorPad(TVMOperator):
     DEFAULT_NAME = "pad"
     AXES = "ij"
@@ -834,6 +678,94 @@ class TVMOperatorPad(TVMOperator):
     @override
     def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
         return (self.args[:-1],)
+
+    @override
+    def outputs_types(self) -> tuple[str, ...]:
+        _, dtype = self.args
+        return (dtype,)
+
+
+class TVMOperatorPad2D(TVMOperatorPad):
+    DEFAULT_NAME = "pad2d"
+    AXES = "ij"
+    KINDS = "PP"
+
+    def __init__(
+        self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
+    ) -> None:
+        attrs = {**attrs}
+        super().__init__(args, attrs, name)
+
+
+class TVMOperatorUnpad2D(TVMOperator):
+    DEFAULT_NAME = "unpad2d"
+    AXES = "ij"
+    KINDS = "PP"
+
+    def __init__(
+        self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
+    ) -> None:
+        attrs = {**attrs}
+        super().__init__(args, attrs, name)
+
+    @override
+    def dims(self, kind: str = "") -> tuple[str, ...]:
+        return self._dims(kind)
+
+    @override
+    def dims_sizes(self) -> dict[str, int]:
+        return {f"d{i}": size for i, size in enumerate(self.args[:-1])}
+
+    @override
+    def generate_op(
+        self, inputs: Sequence[TETensor] | None = None
+    ) -> tuple[TETensor, ...]:
+        dtype = self.args[-1]
+        dims_values = list(self.args[:-1])
+        padding = self.attrs["padding"]
+        axis1, axis2 = tuple(padding.keys())
+        hb, he = padding[axis1]
+        wb, we = padding[axis2]
+        ha, wa = dims_values[axis1] + hb + he, dims_values[axis2] + wb + we
+        if inputs is None:
+            dims_values_after_unpad = list(dims_values)
+            dims_values_after_unpad[axis1], dims_values_after_unpad[axis2] = ha, wa
+            A = te.placeholder(tuple(dims_values_after_unpad), name="A", dtype=dtype)
+        else:
+            (A,) = inputs
+
+        def get_indexes(*args: int) -> tuple[int, ...]:
+            indexes = list(args)
+            indexes[axis1] += hb
+            indexes[axis2] += wb
+            return tuple(indexes)
+
+        O = te.compute(
+            tuple(dims_values),
+            lambda *args: A[get_indexes(*args)],
+            name=self.name,
+        )
+        return A, O
+
+    @override
+    def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        padding = self.attrs["padding"]
+        axis1, axis2 = tuple(padding.keys())
+        hb, he = padding[axis1]
+        wb, we = padding[axis2]
+        inp_dims = list(self.args[:-1])
+        inp_dims[axis1] += hb + he
+        inp_dims[axis2] += wb + we
+        return (tuple(inp_dims),)
+
+    @override
+    def inputs_types(self) -> tuple[str, ...]:
+        _, dtype = self.args
+        return (dtype,)
+
+    @override
+    def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        return self.args[:-1]
 
     @override
     def outputs_types(self) -> tuple[str, ...]:
