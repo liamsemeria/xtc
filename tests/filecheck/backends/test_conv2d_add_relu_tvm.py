@@ -41,14 +41,14 @@ print(f"CODE: {res}")
 # CHECK-NEXT:   outputs:
 # CHECK-NEXT:   - %6 : 1x55x55x64xfloat32
 # CHECK-NEXT:   nodes:
-# CHECK-NEXT:   - %3: pad2d(%0, padding=(2, 2, 2, 2)) {name = 'pad'} : [1x224x224x3xfloat32] -> [1x228x228x3xfloat32]
+# CHECK-NEXT:   - %3: pad2d(%0, padding={-3: (2, 2), -2: (2, 2)}, constant_value=0) {name = 'pad'} : [1x224x224x3xfloat32] -> [1x228x228x3xfloat32]
 # CHECK-NEXT:   - %4: conv2d(%3, %1, stride=(4, 4)) {name = 'conv2d'} : [1x228x228x3xfloat32, 11x11x3x64xfloat32] -> [1x55x55x64xfloat32]
 # CHECK-NEXT:   - %5: add(%4, %2) {name = 'add'} : [1x55x55x64xfloat32, 1x1x1x64xfloat32] -> [1x55x55x64xfloat32]
 # CHECK-NEXT:   - %6: relu(%5) : [1x55x55x64xfloat32] -> [1x55x55x64xfloat32]
-# CHECK-NEXT:   
+# CHECK-NEXT:  
 # CHECK-NEXT: # from tvm.script import ir as I
 # CHECK-NEXT: # from tvm.script import tir as T
-# CHECK-NEXT:   
+# CHECK-NEXT:  
 # CHECK-NEXT: @I.ir_module
 # CHECK-NEXT: class Module:
 # CHECK-NEXT:     @T.prim_func
@@ -57,10 +57,10 @@ print(f"CODE: {res}")
 # CHECK-NEXT:         pad = T.allocate([193600], "float32", "global")
 # CHECK-NEXT:         conv2d = T.allocate([193600], "float32", "global")
 # CHECK-NEXT:         pad_1 = T.Buffer((154587,), data=pad)
-# CHECK-NEXT:         for hi, wi, ci in T.grid(227, 227, 3):
-# CHECK-NEXT:             cse_var_1: T.int32 = wi * 3
+# CHECK-NEXT:         for i1, i2, i3 in T.grid(227, 227, 3):
+# CHECK-NEXT:             cse_var_1: T.int32 = i2 * 3
 # CHECK-NEXT:             _0_1 = T.Buffer((150528,), data=_0.data)
-# CHECK-NEXT:             pad_1[hi * 681 + cse_var_1 + ci] = T.if_then_else(2 <= hi and hi < 226 and 2 <= wi and wi < 226, _0_1[hi * 672 + cse_var_1 + ci - 1350], T.float32(0.0))
+# CHECK-NEXT:             pad_1[i1 * 681 + cse_var_1 + i3] = T.if_then_else(2 <= i1 and i1 < 226 and 2 <= i2 and i2 < 226, _0_1[i1 * 672 + cse_var_1 + i3 - 1350], T.float32(0.0))
 # CHECK-NEXT:         for h, w, f in T.grid(55, 55, 64):
 # CHECK-NEXT:             conv2d_1 = T.Buffer((193600,), data=conv2d)
 # CHECK-NEXT:             conv2d_1[h * 3520 + w * 64 + f] = T.float32(0.0)
@@ -89,10 +89,10 @@ print(f"CODE: {res}")
 # CHECK-NEXT: b, h, w, f, = O.op.axis
 # CHECK-NEXT: r, s, c, = O.op.reduce_axis
 # CHECK-NEXT: sch[O].reorder(b, h, w, f, r, s, c)
-# CHECK-NEXT:   
+# CHECK-NEXT:  
 # CHECK-NEXT: # from tvm.script import ir as I
 # CHECK-NEXT: # from tvm.script import tir as T
-# CHECK-NEXT:   
+# CHECK-NEXT:  
 # CHECK-NEXT: @I.ir_module
 # CHECK-NEXT: class Module:
 # CHECK-NEXT:     @T.prim_func
@@ -101,10 +101,10 @@ print(f"CODE: {res}")
 # CHECK-NEXT:         pad = T.allocate([193600], "float32", "global")
 # CHECK-NEXT:         conv2d = T.allocate([193600], "float32", "global")
 # CHECK-NEXT:         pad_1 = T.Buffer((154587,), data=pad)
-# CHECK-NEXT:         for hi, wi, ci in T.grid(227, 227, 3):
-# CHECK-NEXT:             cse_var_1: T.int32 = wi * 3
+# CHECK-NEXT:         for i1, i2, i3 in T.grid(227, 227, 3):
+# CHECK-NEXT:             cse_var_1: T.int32 = i2 * 3
 # CHECK-NEXT:             _0_1 = T.Buffer((150528,), data=_0.data)
-# CHECK-NEXT:             pad_1[hi * 681 + cse_var_1 + ci] = T.if_then_else(2 <= hi and hi < 226 and 2 <= wi and wi < 226, _0_1[hi * 672 + cse_var_1 + ci - 1350], T.float32(0.0))
+# CHECK-NEXT:             pad_1[i1 * 681 + cse_var_1 + i3] = T.if_then_else(2 <= i1 and i1 < 226 and 2 <= i2 and i2 < 226, _0_1[i1 * 672 + cse_var_1 + i3 - 1350], T.float32(0.0))
 # CHECK-NEXT:         for h, w, f in T.grid(55, 55, 64):
 # CHECK-NEXT:             conv2d_1 = T.Buffer((193600,), data=conv2d)
 # CHECK-NEXT:             conv2d_1[h * 3520 + w * 64 + f] = T.float32(0.0)
