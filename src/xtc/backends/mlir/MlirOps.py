@@ -469,6 +469,142 @@ class MlirOperatorRelu(MlirOperator):
         dtype = self.args[-1]
         return (dtype,)
 
+class MlirOperatorAdd(MlirOperator):
+    DEFAULT_NAME = "add"
+    AXES = "i"
+    KINDS = "P"
+
+    @override
+    def dims(self, kind: str = "") -> tuple[str, ...]:
+        return self._dims(kind)
+
+    @override
+    def dims_sizes(self) -> dict[str, int]:
+        i, _ = self.args
+        return {"i": i}
+
+    @override
+    def generate_op(
+        self, block: Block | None = None, args: Sequence[BlockArgument] = []
+    ) -> tuple[Block, OpAttrs]:
+        print(self.args)
+        Ki, dtype = self.args
+        elt_type = {"float32": f32, "float64": f64}[dtype]
+        elt_size = {"float32": 32, "float64": 64}[dtype]
+        inps_dims = self.inputs_dims()
+        out_dims = self.outputs_dims()[0]
+        if block is None:
+            print("block is none")
+            ops_types = [MemRefType(elt_type, shape) for shape in [[Ki], [Ki]]]
+            block = Block(arg_types=ops_types)
+            args = block.args
+        assert len(args) == 3
+        assert all(isinstance(arg.type, MemRefType) for arg in args)
+        inp_shape_A, inp_shape_B, out_shape = [
+            list(cast(MemRefType, arg.type).get_shape()) for arg in args
+        ]
+        print(out_shape)
+        # determine dims that need to be broadcasted
+        a_broadcast_dims = []
+        b_broadcast_dims = []
+        for i in range(len(out_shape)):
+            if inp_shape_A[i] == 1:
+                a_broadcast_dims.append(i)
+            if inp_shape_B[i] == 1:
+                b_broadcast_dims.append(i)
+        print(b_broadcast_dims)
+        with ImplicitBuilder(block):
+            inp_reassociation = builtin.ArrayAttr(
+                [
+                    builtin.ArrayAttr(
+                        [builtin.IntegerAttr(x, i64) for x in range(len(inp_shape))]
+                    )
+                ]
+            )
+            out_reassociation = builtin.ArrayAttr(
+                [
+                    builtin.ArrayAttr(
+                        [builtin.IntegerAttr(x, i64) for x in range(len(out_shape))]
+                    )
+                ]
+            )
+            inp = memref.CollapseShapeOp(
+                operands=[args[0]],
+                properties=dict(reassociation=inp_reassociation),
+                result_types=[MemRefType(elt_type, (inp_size,))],
+            )
+            out = memref.CollapseShapeOp(
+                operands=[args[1]],
+                properties=dict(reassociation=out_reassociation),
+                result_types=[MemRefType(elt_type, (out_size,))],
+            )
+            cst0 = arith.ConstantOp(builtin.FloatAttr(0, elt_size))
+            iterator_types = [
+                StringAttr({"P": "parallel", "R": "reduction"}[k]) for k in self.KINDS
+            ]
+            block_in = Block(arg_types=[f32, f32, f32])
+            with ImplicitBuilder(block_in):
+                max = arith.MaximumfOp(block_in.args[0], block_in.args[1])
+                linalg.YieldOp(max)
+            add = linalg.GenericOp(
+                inputs=(inp.results[0], cst0.results[0]),
+                outputs=(out.results[0],),
+                body=Region([block_in]),  # type: ignore # mypy issue with dataclass
+                # ignore typing due to xdsl hints limitation
+                indexing_maps=[
+                    AffineMapAttr(
+                        AffineMap.from_callable(
+                            lambda i:  # type: ignore
+                            (i,)
+                        )
+                    ),
+                    AffineMapAttr(
+                        AffineMap.from_callable(
+                            lambda _:  # type: ignore
+                            ()
+                        )
+                    ),
+                    AffineMapAttr(
+                        AffineMap.from_callable(
+                            lambda i:  # type: ignore
+                            (i,)
+                        )
+                    ),
+                ],
+                iterator_types=iterator_types,
+            )
+        add_node_id = f"{self.name}"
+        add.attributes[f"__xtc_id_{add_node_id}_"] = UnitAttr()
+        attrs = {
+            "nodes_map": {
+                add_node_id: add,
+            },
+            "dims_sizes": [
+                self.dims_sizes(),
+            ],
+        }
+        return block, attrs
+
+    @override
+    def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        i = self.args[0]
+        return ((i,),)
+
+    @override
+    def inputs_types(self) -> tuple[str, ...]:
+        dtype = self.args[-1]
+        return (dtype,)
+
+    @override
+    def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        i = self.args[0]
+        return ((i,),)
+
+    @override
+    def outputs_types(self) -> tuple[str, ...]:
+        dtype = self.args[-1]
+        return (dtype,)
+
 
 class MlirOperatorPad(MlirOperator):
     DEFAULT_NAME = "pad"
@@ -693,6 +829,7 @@ class MlirOperators:
     matmul = MlirOperatorMatmul
     conv2d = MlirOperatorConv2D
     relu = MlirOperatorRelu
+    add = MlirOperatorAdd
     pad2d = MlirOperatorPad2D
     unpad = MlirOperatorUnpad
     pad = MlirOperatorPad
