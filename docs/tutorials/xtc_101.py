@@ -366,6 +366,7 @@ def _(mo):
       This creates $16 \times 16$ tiles over the $(j, k)$ dimensions.
     - `sch.vectorize(["j1"])` vectorizes the computation along the loop `j1`. Vectorization uses SIMD instructions to process multiple elements in parallel, significantly increasing throughput on modern CPUs.
     - `sch.unroll({"j1":1})` unrolls the loop `j1` with an unroll factor of 1 (which has no effect). Unrolling reduces loop overhead (fewer branches) and exposes more instruction-level parallelism to the hardware.
+    - `sch.parallelize(["i"])` execute in parallel along the loop `i`. Parallelization is only useful on a multiple cores architecture and actually splits and dispatch the work onto the available cores.
     - `sch.split("j", {"j0": 0, "j1": 16})` splits `j` into two segments, creating `j0` (iterations 0-15) and `j1` (iterations 16+). Splitting is useful for applying different transformations to different parts of a loop (e.g., vectorize the main part, handle the remainder separately).
     """)
     return
@@ -949,9 +950,91 @@ def _(strategy_editor, run_strategy_button, mo, run_exploration, traceback):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
+    ## 8. Optimizing for larger matmul size and compare with Numpy
+
+    In previous sections we explored small matmul problem sizes where tiling for
+    multiple cache levels is not really necessary.
+
+    Let's now try to optimize for instance a $1024 \times 1024 \times 1024$ matmul which
+    should put more challenge on optimizing the memory cache reuse.
+    Indeed, the size of each matrice is then 4MB for float32 which is generally much
+    larger than the L2 cache on a CPU (typically 1MB).
+
+    First, in order to have a comparison with an existing implementation,
+    let's try the Python Numpy package matmul which is implemented through the OpenBLAS library.
+
+    Note that OpenBLAS will use the number of available cores on the system, hence we must adjust
+    the estimation of the `peak_flops` by setting the `cores` variable to the real number of
+    cores (set to 4 here by default), change this for your architecture.
+    """)
+    return
+
+@app.cell
+def _(mo):
+    numpy_editor = mo.ui.code_editor(
+        value=
+'''# Run numpy matmul and collect elapsed time
+import timeit
+import numpy as np
+import xtc.runtimes.host.runtime as rt
+
+I, J, K, dtype = 1024, 1024, 1024, "float32"
+
+cores = 4    # set to an estimated number of core
+peak_flops = cores * rt.evaluate_flops(dtype, threads=cores)
+
+A = np.random.rand(I, K).astype(dtype)
+B = np.random.rand(K, J).astype(dtype)
+C = np.empty((I, J), dtype=dtype)
+
+number = 5
+elapsed = timeit.timeit(lambda: np.matmul(A, B, C), number=number)/number
+perf = (I * J * K) / elapsed / peak_flops * 100
+print(f"numpy perf: {perf}%")''',
+        language="python",
+        label=""
+    )
+    numpy_editor
+    return numpy_editor,
+
+@app.cell
+def _(numpy_editor, execute_editor_code, mo):
+    _success, _output, _ = execute_editor_code(numpy_editor.value)
+    mo.stop(not _success, mo.md(f"**Code error:**\n```\n{_output}\n```"))
+    mo.md(f"**Output:**\n```\n{_output}\n```")
+    return
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    Generally on a 4 cores architecture, the computed `numpy perf` should be
+    around 50-70% of the peak parallel performance.
+
+    You may use the sandbox below or develop on your own editor to generate an
+    XTC schedule which is at least as good as this result.
+
+    Here are some hints:
+    - in order to reach performance given the parallel peak flops computed above,
+    one will have to use the `parallelize` primitive or pass to strategies the additional
+    argument `threads=cores` (to activate parallelization of the outer axes);
+    - for large matmul sizes a good strategy to start with is `Strategy_GOTO`, in this case prefer the TVM backend (currently XTC does not implement packing primitives for MLIR);
+    - the base strategy is generally not sufficient, and one may filter the generated
+    samples to reduce the search space and converge faster, we've seen that the inner tile
+    dimension, vectorization and unrolling are important, this can be done by eviction.
+    """)
+    return
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
     ## Sandbox
 
-    This place is your playground. It is where you will achieve the greatest challenges ;) For instance, you could try to find a near-optimal schedule for 1024x1024x1024 matmul !
+    This place is your playground. It is where you will achieve the greatest challenges,
+    using XTC from scratch ;)
+
+    For instance, you could try to solve the challenge in section 8 above and reach the
+     OpenBLAS performance on a large matmul.
+
     """)
     return
 
@@ -959,12 +1042,9 @@ def _(mo):
 def _(mo):
     sandbox_editor = mo.ui.code_editor(
         value=
-'''#
-#
-#
-#
-#
-print("Hello world!")''',
+'''\
+# Implement your challenge here!
+print("Hello XTC!")''',
         language="python",
         label=""
     )
@@ -977,6 +1057,6 @@ def _(sandbox_editor, execute_editor_code, mo):
     mo.stop(not _success, mo.md(f"**Code error:**\n```\n{_output}\n```"))
     mo.md(f"**Output:**\n```\n{_output}\n```")
     return
-    
+
 if __name__ == "__main__":
     app.run()
