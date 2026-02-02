@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 The XTC Project Authors
 #
+from xtc.itf.schd.scheduler import DEFAULT_ROOT
 from dataclasses import dataclass
 from mlir.dialects import transform
 from mlir.dialects.transform import (
@@ -20,6 +21,8 @@ from mlir.dialects.transform.structured import (
     structured_match,
     ApplyFoldUnitExtentDimsViaSlicesPatternsOp,
     MatchInterfaceEnum,
+    FuseIntoContainingOp,
+    ApplyDecomposeTensorPadPatternsOp,
 )
 from mlir.dialects.transform.loop import loop_unroll
 from mlir.dialects.transform import SplitHandleOp
@@ -30,6 +33,8 @@ from mlir.ir import (
     OpResult,
 )
 from mlir.passmanager import PassManager
+from mlir.ir import Module
+import subprocess
 
 # Import SDist if available
 try:
@@ -52,6 +57,7 @@ _POST_BUFFERIZE_SEQ_NAME = "_post_bufferize"
 class SchedulingState:
     all_loops: dict[str, OpResult]
     handle: OpResult
+    prev_container: None | OpResult
 
 
 @dataclass
@@ -202,24 +208,68 @@ class MlirProgramInsertTransformPass:
     def _generate_scheduling(self) -> OpResult:
         assert self._named_sequence is not None
         handle = None
+
+        unscheduled_handles: set[str | None] = set()
+        fused_producers = {}
         for schedule in self._nodes_schedules:
+            if schedule.fused:
+                prods = find_producer_handles(
+                    self._mlir_program.mlir_module, schedule.node_ident
+                )
+                unscheduled_handles = unscheduled_handles.union(set(prods))
+                op_axes = {idx: f"./{ax}" for ax, idx in schedule.fused}
+                prev_fused_idx = -1
+                fuse_destinations = {}
+                for idx, name in enumerate(prods):
+                    if not name:
+                        continue
+                    if idx in op_axes:
+                        fuse_destinations[name] = op_axes[idx]
+                        prev_fused_idx = idx
+                # need to fuse outer dims to get each producer to the correct dim
+                # assumes split and fuse are incompatible
+                dim_fuse_handles: dict[str, list[str]] = {}
+                for fuse_handle, fuse_dest in fuse_destinations.items():
+                    for dim in schedule.permutation[DEFAULT_ROOT]:
+                        dim_fuse_handles.setdefault(dim, []).append(fuse_handle)
+                        if dim == fuse_dest:
+                            break
+                fused_producers[schedule.node_ident] = dim_fuse_handles
+
+        for schedule in self._nodes_schedules:
+            if schedule.node_ident in unscheduled_handles:
+                continue
             self._create_sdist_meshes(schedule)
             handle = structured_match(
                 results_=transform.AnyOpType.get(),
                 target=self._named_sequence.bodyTarget,
                 op_attrs={schedule.node_ident: UnitAttr.get()},
             )
+
             if schedule.permutation:
                 scheduling_state = self._generate_node_scheduling(
                     schedule=schedule,
                     root=list(schedule.permutation)[0],
                     handle=handle,
+                    fuse_axes=fused_producers.get(schedule.node_ident),
                 )
                 if schedule.vectorization or self._always_vectorize:
                     self._post_vectorize(scheduling_state, schedule)
                 handle = scheduling_state.handle
+
         assert handle, "At least 1 operation should have been processed"
         return handle
+
+    def _lower_tensor_pad(self, schedule: MlirNodeSchedule) -> None:
+        assert self._named_sequence is not None
+        func = structured_match(
+            results_=transform.AnyOpType.get(),
+            target=self._named_sequence.bodyTarget,
+            ops=["func.func"],
+        )
+        patterns_op = transform.ApplyPatternsOp(func)
+        with InsertionPoint(patterns_op.patterns):
+            ApplyDecomposeTensorPadPatternsOp()
 
     def _create_sdist_meshes(self, schedule: MlirNodeSchedule) -> None:
         assert self._named_sequence is not None
@@ -289,8 +339,9 @@ class MlirProgramInsertTransformPass:
         schedule: MlirNodeSchedule,
         root: str,
         handle: OpResult,
+        fuse_axes: dict[str, list[str]] | None,
     ) -> SchedulingState:
-        sched_state = SchedulingState({}, handle)
+        sched_state = SchedulingState({}, handle, None)
         split_state = SplitState(schedule.splits, root)
         tiles_sizes_by_loops = self._generate_tiling_insns(schedule)
         permutation = schedule.permutation[root]
@@ -334,6 +385,11 @@ class MlirProgramInsertTransformPass:
                     schedule=schedule,
                     sched_state=sched_state,
                 )
+            # Fuse the producers
+            if fuse_axes and loop_name in fuse_axes:
+                self._fuse_producers_into_loop(
+                    loop_name, fuse_axes, schedule, sched_state
+                )
 
         # For now on, the focus is on the outermost loop
         if sched_state.all_loops:
@@ -344,6 +400,42 @@ class MlirProgramInsertTransformPass:
             self._unroll(permutation, schedule, sched_state)
 
         return sched_state
+
+    def _fuse_producers_into_loop(
+        self,
+        loop_name: str,
+        fuse_axes: dict[str, list[str]],
+        schedule: MlirNodeSchedule,
+        sched_state: SchedulingState,
+    ):
+        assert self._named_sequence is not None
+        target_container = sched_state.prev_container
+
+        fuse_op_names = fuse_axes[loop_name]
+        for fuse_op_name in fuse_op_names:
+            if not target_container:
+                target_container = self._named_sequence.bodyTarget
+            # search for the producer in the parent or in the previous loop
+            prod_handle = structured_match(
+                results_=transform.AnyOpType.get(),
+                target=target_container,
+                op_attrs={fuse_op_name: UnitAttr.get()},
+            )
+            handle, new_loop = FuseIntoContainingOp(
+                fused_op_type_or_producer_op=prod_handle,
+                new_containing_op_type_or_containing_op=sched_state.all_loops[
+                    loop_name
+                ],
+            ).results
+            # rematch the scheduled op
+            new_handle = structured_match(
+                results_=transform.AnyOpType.get(),
+                target=target_container,
+                op_attrs={schedule.node_ident: UnitAttr.get()},
+            )
+            sched_state.handle = new_handle
+            sched_state.all_loops[loop_name] = new_loop
+            sched_state.prev_container = new_loop
 
     def _generate_tiling_insns(
         self, schedule: MlirNodeSchedule
@@ -414,7 +506,7 @@ class MlirProgramInsertTransformPass:
         self, schedule: MlirNodeSchedule, root: str, sched_state: SchedulingState
     ):
         inner_sched_state = self._generate_node_scheduling(
-            schedule=schedule, root=root, handle=sched_state.handle
+            schedule=schedule, root=root, handle=sched_state.handle, fuse_axes=None
         )
         sched_state.all_loops.update(inner_sched_state.all_loops)
         sched_state.handle = inner_sched_state.handle
@@ -560,6 +652,30 @@ class MlirProgramInsertTransformPass:
                 )
 
 
+# returns the handles for each operand of the operation specified by root_handle
+def find_producer_handles(module: Module, root_handle: str) -> list[str | None]:
+    producer_handles: list[str | None] = []
+    root_op = None
+    for func_op in module.body.operations:
+        for op in func_op.regions[0].blocks[0].operations:
+            if root_handle in op.attributes:
+                root_op = op
+                break
+        if root_op:
+            break
+
+    if not root_op:
+        return producer_handles
+    for operand in root_op.operands:
+        producer_op = operand.owner
+        producer_handles.append(None)
+        if producer_op and hasattr(producer_op, "attributes"):
+            for attr in producer_op.attributes:
+                if str(attr.name).startswith("__xtc_id_"):
+                    producer_handles[-1] = attr.name
+    return producer_handles
+
+
 class MlirProgramApplyTransformPass:
     def __init__(
         self,
@@ -595,23 +711,35 @@ class MlirProgramApplyTransformPass:
             break
 
 
-class MlirProgramApplyPasses:
-    def __init__(
-        self,
-        mlir_program: RawMlirProgram,
-    ) -> None:
+class MlirProgramApplyXTCOpt:
+    def __init__(self, mlir_program: RawMlirProgram) -> None:
         self._mlir_program = mlir_program
 
     def run(self, pass_names: list[str]) -> None:
-        ctx = self._mlir_program.mlir_context
-        pm = PassManager(context=ctx)
-        for name in pass_names:
-            pm.add(name)  # type: ignore # no attribute add
-        pm.run(self._mlir_program.mlir_module.operation)
+        # serialize current module to text
+        mlir_text = str(self._mlir_program.mlir_module)
+
+        # build pipeline string e.g. "builtin.module(reduce-extract-slices,other-pass)"
+        pipeline = "builtin.module(" + ",".join(pass_names) + ")"
+
+        result = subprocess.run(
+            ["xtc-opt", f"--pass-pipeline={pipeline}", "-"],
+            input=mlir_text,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"xtc-opt failed:\n{result.stderr}")
+
+        # parse the result back into the existing context
+        self._mlir_program.module = Module.parse(
+            result.stdout, self._mlir_program.mlir_context
+        )
 
 
 def apply_bufferization_passes(mlir_program: RawMlirProgram):
-    apply_passes = MlirProgramApplyPasses(mlir_program)
+    apply_passes = MlirProgramApplyXTCOpt(mlir_program)
     bufferize_options = [
         "bufferize-function-boundaries=1",
         "function-boundary-type-conversion=identity-layout-map",
@@ -619,6 +747,7 @@ def apply_bufferization_passes(mlir_program: RawMlirProgram):
     ]
     apply_passes.run(
         [
+            "reduce-extract-slices",
             "canonicalize",
             "cse",
             "eliminate-empty-tensors",  # causes ops to write directly to out buffer
