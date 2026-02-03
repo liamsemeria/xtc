@@ -7,7 +7,7 @@ from typing_extensions import override
 
 from xdsl.dialects.func import FuncOp as xdslFuncOp
 from xdsl.dialects import func, memref
-from xdsl.dialects.builtin import MemRefType, f32, f64
+from xdsl.dialects.builtin import MemRefType, TensorType, f32, f64
 from xdsl.ir import Region, Block, Operation
 from xdsl.builder import ImplicitBuilder
 
@@ -28,7 +28,9 @@ class MlirGraphBackend(MlirBackend):
         concluding_passes: list[str] = [],
         always_vectorize: bool = False,
         no_alias: bool = True,
+        use_tensor_dialect: bool = False,
     ):
+        self.xdsl_type = TensorType if use_tensor_dialect else MemRefType
         if isinstance(xdsl_func, XTCGraph):
             assert nodes is None
             graph = xdsl_func
@@ -128,6 +130,7 @@ class MlirGraphBackend(MlirBackend):
                     always_vectorize=always_vectorize,
                     concluding_passes=concluding_passes,
                     id=f"__xtc_id_{node_id}_",
+                    xdsl_type=self.xdsl_type
                 )
         return payload, nodes_dict
 
@@ -137,10 +140,10 @@ class MlirGraphBackend(MlirBackend):
 
     def _xdsl_type_from_tensortype(self, type: XTCTensorType) -> Any:
         elt_type, shape = self._xdsl_elt_shape_from_tensortype(type)
-        return MemRefType(elt_type, shape)
+        return self.xdsl_type(elt_type, shape)
 
     def _np_types_spec(
-        self, types: list[MemRefType]
+        self, types: list[MemRefType | TensorType]
     ) -> list[dict[str, tuple[int, ...] | str]]:
         types_map = {"f32": "float32", "f64": "float64"}
         types_spec: list[dict[str, tuple[int, ...] | str]] = [
@@ -156,12 +159,12 @@ class MlirGraphBackend(MlirBackend):
     def np_inputs_spec(self) -> list[dict[str, Any]]:
         # Assume inputs are first, and output is single last param
         inputs_args_types = [arg.type for arg in self.xdsl_func.args[:-1]]
-        list_memref_tys = cast(list[MemRefType], inputs_args_types)
-        return self._np_types_spec(list_memref_tys)
+        list_xdsl_tys = cast(list[self.xdsl_type], inputs_args_types)
+        return self._np_types_spec(list_xdsl_tys)
 
     @override
     def np_outputs_spec(self) -> list[dict[str, Any]]:
         # Assume inputs are first, and output is single last param
         outputs_args_types = [arg.type for arg in self.xdsl_func.args[-1:]]
-        list_memref_tys = cast(list[MemRefType], outputs_args_types)
-        return self._np_types_spec(list_memref_tys)
+        list_xdsl_tys = cast(list[self.xdsl_type], outputs_args_types)
+        return self._np_types_spec(list_xdsl_tys)
