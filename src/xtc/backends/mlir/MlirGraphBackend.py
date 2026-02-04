@@ -64,7 +64,7 @@ class MlirGraphBackend(MlirBackend):
     def _xdsl_generate_node(
         self, node: XTCNode, block: Block, variables: dict[str, Any]
     ):
-        operation = MlirOperation.from_operation(node.operation, name=node.name)
+        operation = MlirOperation.from_operation(node.operation, name=node.name, op_type=self.xdsl_type)
         names = [*node.inputs, *node.outputs]
         assert node.inputs_types is not None and node.outputs_types is not None
         types = [*node.inputs_types, *node.outputs_types]
@@ -108,13 +108,17 @@ class MlirGraphBackend(MlirBackend):
         for node in graph.nodes.values():
             node_attrs = self._xdsl_generate_node(node, inlined_block, variables)
             block_attrs.append(node_attrs)
+        return_val =  block_attrs[-1]["nodes_map"]["return_node_id"]
         with ImplicitBuilder(inlined_block):
-            func.ReturnOp()
+            if return_val:
+                func.ReturnOp(return_val)
+            else:
+                func.ReturnOp()
         region = Region([inlined_block])  # type: ignore # issue with mypy
         payload = xdslFuncOp.from_region(
             name=graph.name,
             input_types=params_types,
-            return_types=[],
+            return_types=[params_types[-1]] if return_val else [],
             region=region,
         )
         nodes_dict = {}

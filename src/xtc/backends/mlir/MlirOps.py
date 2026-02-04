@@ -7,9 +7,11 @@ from collections.abc import Sequence
 from typing_extensions import override
 from typing import Any, Type, TypeAlias, cast
 
-from xdsl.dialects import linalg, arith, builtin, memref
+from xdsl.dialects import linalg, arith, builtin, memref, tensor
 from xdsl.dialects.builtin import (
     MemRefType,
+    TensorType,
+    Sequence,
     f32,
     f64,
     i64,
@@ -42,8 +44,9 @@ class MlirOperation:
         args: tuple[Any, ...],
         attrs: dict[str, Any] = {},
         name: str | None = None,
+        op_type: MemRefType | TensorType = MemRefType,
     ) -> None:
-        self.operator = operator(args, attrs, name=name)
+        self.operator = operator(args, attrs, name=name, op_type=op_type)
         self.args = args
         self.attrs = attrs
         self.name = self.operator.name if name is None else name
@@ -78,7 +81,7 @@ class MlirOperation:
         return outputs_spec
 
     @classmethod
-    def from_operation(cls, xtc_op: Operation, name: str | None) -> "MlirOperation":
+    def from_operation(cls, xtc_op: Operation, name: str | None, op_type: MemRefType | TensorType) -> "MlirOperation":
         dims = xtc_op.dims.values()
         dtype = xtc_op.inputs_types[0].dtype  # TODO: currently get dtype from 1st arg
         args = tuple([*dims, dtype])
@@ -88,6 +91,7 @@ class MlirOperation:
             args,
             dict(attrs),
             name=name,
+            op_type=op_type,
         )
 
 
@@ -97,11 +101,12 @@ class MlirOperator(ABC):
     KINDS = ""
 
     def __init__(
-        self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
+            self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None, op_type: MemRefType | TensorType = MemRefType
     ) -> None:
         self.args = args
         self.attrs = {**attrs}
         self.name = name if name is not None else self.DEFAULT_NAME
+        self.op_type = op_type
 
     @abstractmethod
     def generate_op(
@@ -149,24 +154,42 @@ class MlirOperatorMatmul(MlirOperator):
         elt_size = {"float32": 32, "float64": 64}[dtype]
         if block is None:
             ops_types = [
-                MemRefType(elt_type, shape) for shape in [[Ki, Kk], [Kk, Kj], [Ki, Kj]]
+                self.op_type(elt_type, shape) for shape in [[Ki, Kk], [Kk, Kj], [Ki, Kj]]
             ]
             block = Block(arg_types=ops_types)
             args = block.args
         assert len(args) == 3
-        assert all(isinstance(arg.type, MemRefType) for arg in args)
+        assert all(isinstance(arg.type, self.op_type) for arg in args)
         with ImplicitBuilder(block):
             cst0 = arith.ConstantOp(builtin.FloatAttr(0, elt_size))
-            fill = linalg.FillOp(
-                res=(),
-                inputs=(cst0.results[0],),
-                outputs=(args[2],),
-            )
-            reduce = linalg.MatmulOp(
-                res=(),
-                inputs=(args[0], args[1]),
-                outputs=(args[2],),
-            )
+
+            if self.op_type == MemRefType:
+                fill = linalg.FillOp(
+                    res=(),
+                    inputs=(cst0.results[0],),
+                    outputs=(args[2],),
+                )
+                reduce = linalg.MatmulOp(
+                    res=(),
+                    inputs=(args[0], args[1]),
+                    outputs=(args[2],),
+                )
+            else:
+                empty = tensor.EmptyOp(
+                    dynamic_sizes=[],
+                    tensor_type=args[2].type,
+                )
+                fill = linalg.FillOp(
+                    res=(empty.results[0].type,),
+                    inputs=(cst0.results[0],),
+                    outputs=(empty.results[0],),
+                )
+                reduce = linalg.MatmulOp(
+                    res=(args[2].type,),
+                    inputs=(args[0], args[1]),
+                    outputs=(fill.results[0],),
+                )
+
         fill_node_id = f"{self.name}_0"
         reduce_node_id = f"{self.name}"
         fill.attributes[f"__xtc_id_{fill_node_id}_"] = UnitAttr()
@@ -175,6 +198,7 @@ class MlirOperatorMatmul(MlirOperator):
             "nodes_map": {
                 fill_node_id: fill,
                 reduce_node_id: reduce,
+                "return_node_id": reduce if self.op_type == TensorType else None,
             },
             "dims_sizes": [
                 {"i": Ki, "j": Kj},
