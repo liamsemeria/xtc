@@ -11,7 +11,6 @@ from xdsl.dialects import linalg, arith, builtin, memref, tensor
 from xdsl.dialects.builtin import (
     MemRefType,
     TensorType,
-    Sequence,
     f32,
     f64,
     i64,
@@ -44,7 +43,7 @@ class MlirOperation:
         args: tuple[Any, ...],
         attrs: dict[str, Any] = {},
         name: str | None = None,
-        op_type: MemRefType | TensorType = MemRefType,
+        op_type: Type[MemRefType] | Type[TensorType] = MemRefType,
     ) -> None:
         self.operator = operator(args, attrs, name=name, op_type=op_type)
         self.args = args
@@ -81,7 +80,12 @@ class MlirOperation:
         return outputs_spec
 
     @classmethod
-    def from_operation(cls, xtc_op: Operation, name: str | None, op_type: MemRefType | TensorType) -> "MlirOperation":
+    def from_operation(
+        cls,
+        xtc_op: Operation,
+        name: str | None,
+        op_type: Type[MemRefType] | Type[TensorType],
+    ) -> "MlirOperation":
         dims = xtc_op.dims.values()
         dtype = xtc_op.inputs_types[0].dtype  # TODO: currently get dtype from 1st arg
         args = tuple([*dims, dtype])
@@ -101,7 +105,11 @@ class MlirOperator(ABC):
     KINDS = ""
 
     def __init__(
-            self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None, op_type: MemRefType | TensorType = MemRefType
+        self,
+        args: tuple[Any, ...],
+        attrs: dict[str, Any],
+        name: str | None = None,
+        op_type: Type[MemRefType] | Type[TensorType] = MemRefType,
     ) -> None:
         self.args = args
         self.attrs = {**attrs}
@@ -154,12 +162,15 @@ class MlirOperatorMatmul(MlirOperator):
         elt_size = {"float32": 32, "float64": 64}[dtype]
         if block is None:
             ops_types = [
-                self.op_type(elt_type, shape) for shape in [[Ki, Kk], [Kk, Kj], [Ki, Kj]]
+                self.op_type(elt_type, shape)
+                for shape in [[Ki, Kk], [Kk, Kj], [Ki, Kj]]
             ]
             block = Block(arg_types=ops_types)
             args = block.args
         assert len(args) == 3
-        assert all(isinstance(arg.type, self.op_type) for arg in args)
+        assert all(isinstance(arg.type, self.op_type) for arg in args[:-1])
+        # output arg is always a memref (for now)
+        assert isinstance(args[-1].type, MemRefType)
         with ImplicitBuilder(block):
             cst0 = arith.ConstantOp(builtin.FloatAttr(0, elt_size))
 
@@ -175,9 +186,10 @@ class MlirOperatorMatmul(MlirOperator):
                     outputs=(args[2],),
                 )
             else:
+                out_tensor_type = TensorType(elt_type, [Ki, Kj])
                 empty = tensor.EmptyOp(
                     dynamic_sizes=[],
-                    tensor_type=args[2].type,
+                    tensor_type=out_tensor_type,
                 )
                 fill = linalg.FillOp(
                     res=(empty.results[0].type,),
@@ -185,11 +197,10 @@ class MlirOperatorMatmul(MlirOperator):
                     outputs=(empty.results[0],),
                 )
                 reduce = linalg.MatmulOp(
-                    res=(args[2].type,),
+                    res=(fill.results[0].type,),
                     inputs=(args[0], args[1]),
                     outputs=(fill.results[0],),
                 )
-
         fill_node_id = f"{self.name}_0"
         reduce_node_id = f"{self.name}"
         fill.attributes[f"__xtc_id_{fill_node_id}_"] = UnitAttr()
@@ -198,7 +209,7 @@ class MlirOperatorMatmul(MlirOperator):
             "nodes_map": {
                 fill_node_id: fill,
                 reduce_node_id: reduce,
-                "return_node_id": reduce if self.op_type == TensorType else None,
+                "return_node_id": reduce,
             },
             "dims_sizes": [
                 {"i": Ki, "j": Kj},
@@ -247,7 +258,11 @@ class MlirOperatorConv2D(MlirOperator):
     DEFAULT_STRIDE = (1, 1)
 
     def __init__(
-        self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
+        self,
+        args: tuple[Any, ...],
+        attrs: dict[str, Any],
+        name: str | None = None,
+        op_type: Type[MemRefType] | Type[TensorType] = MemRefType,
     ) -> None:
         attrs = {"stride": self.DEFAULT_STRIDE, **attrs}
         super().__init__(args, attrs, name)
