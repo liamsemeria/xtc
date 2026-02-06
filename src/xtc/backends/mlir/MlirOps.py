@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing_extensions import override
 from typing import Any, Type, TypeAlias, cast
 
-from xdsl.dialects import linalg, arith, builtin, memref, tensor
+from xdsl.dialects import linalg, arith, builtin, memref
 from xdsl.dialects.builtin import (
     MemRefType,
     TensorType,
@@ -164,7 +164,7 @@ class MlirOperatorMatmul(MlirOperator):
             ops_types = [
                 self.op_type(elt_type, shape) for shape in [[Ki, Kk], [Kk, Kj]]
             ]
-            ops_types.append(MemRefType(elt_type, [Ki, Kj]))
+            ops_types.append(TensorType(elt_type, [Ki, Kj]))
             block = Block(arg_types=ops_types)
             args = block.args
         has_tensor_result = isinstance(args[-1].type, TensorType)
@@ -173,37 +173,19 @@ class MlirOperatorMatmul(MlirOperator):
         assert not (has_tensor_result and self.op_type == MemRefType)
         with ImplicitBuilder(block):
             cst0 = arith.ConstantOp(builtin.FloatAttr(0, elt_size))
-
-            if self.op_type == MemRefType:
-                fill = linalg.FillOp(
-                    res=(),
-                    inputs=(cst0.results[0],),
-                    outputs=(args[2],),
-                )
-                reduce = linalg.MatmulOp(
-                    res=(),
-                    inputs=(args[0], args[1]),
-                    outputs=(args[2],),
-                )
-            else:
-                empty = (
-                    args[2]
-                    if has_tensor_result
-                    else tensor.EmptyOp(
-                        dynamic_sizes=[],
-                        tensor_type=TensorType(elt_type, [Ki, Kj]),
-                    ).results[0]
-                )
-                fill = linalg.FillOp(
-                    res=(empty.type,),
-                    inputs=(cst0.results[0],),
-                    outputs=(empty,),
-                )
-                reduce = linalg.MatmulOp(
-                    res=(fill.results[0].type,),
-                    inputs=(args[0], args[1]),
-                    outputs=(fill.results[0],),
-                )
+            result = (args[2].type,) if self.op_type == TensorType else ()
+            fill = linalg.FillOp(
+                res=result,
+                inputs=(cst0.results[0],),
+                outputs=(args[2],),
+            )
+            reduce = linalg.MatmulOp(
+                res=result,
+                inputs=(args[0], args[1]),
+                outputs=(fill.results[0],)
+                if self.op_type == TensorType
+                else (args[2],),
+            )
         fill_node_id = f"{self.name}_0"
         reduce_node_id = f"{self.name}"
         fill.attributes[f"__xtc_id_{fill_node_id}_"] = UnitAttr()

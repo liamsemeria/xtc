@@ -75,6 +75,12 @@ class MlirGraphBackend(MlirBackend):
         assert node.inputs_types is not None and node.outputs_types is not None
         types = [*node.inputs_types, *node.outputs_types]
         for name, type in zip(names, types):
+            if name in node.outputs and self.xdsl_type == TensorType:
+                with ImplicitBuilder(block):
+                    variables[name] = tensor.EmptyOp(
+                        dynamic_sizes=[],
+                        tensor_type=self._xdsl_type_from_tensortype(type),
+                    ).results[0]
             if name in variables:
                 continue
             with ImplicitBuilder(block):
@@ -82,7 +88,7 @@ class MlirGraphBackend(MlirBackend):
                 result_op = (
                     tensor.EmptyOp(
                         dynamic_sizes=[],
-                        tensor_type=self._xdsl_type_from_tensortype(type),
+                        tensor_type=TensorType(elt_type, shape),
                     )
                     if self.xdsl_type == TensorType
                     else memref.AllocaOp.get(
@@ -111,7 +117,7 @@ class MlirGraphBackend(MlirBackend):
         )
         params_types = [
             self._xdsl_type_from_tensortype(cast(XTCTensorType, tensor_type))
-            for tensor_type in inputs_types  # [*inputs_types, *outputs_types]
+            for tensor_type in inputs_types
         ]
         # graph output types are always memrefs
         params_types.extend(
@@ -133,15 +139,12 @@ class MlirGraphBackend(MlirBackend):
         with ImplicitBuilder(inlined_block):
             if self.xdsl_type == TensorType:
                 assert last_node
-                reduce = bufferization.MaterializeInDestinationOp(
-                    # operands=((inlined_block.args[-1],), (last_node.results[0],)),
+                # write the final tensor value to the output buffer
+                dest = bufferization.MaterializeInDestinationOp(
                     operands=((last_node.results[0],), (inlined_block.args[-1],)),
-                    # result_types=(last_node.results[0].type,),
-                    # result_types=(inlined_block.args[-1].type,),
                     result_types=((),),
+                    attributes={"writable": UnitAttr(), "restrict": UnitAttr()},
                 )
-                reduce.attributes["writable"] = UnitAttr()
-                reduce.attributes["restrict"] = UnitAttr()
             func.ReturnOp()
         region = Region([inlined_block])  # type: ignore # issue with mypy
         payload = xdslFuncOp.from_region(

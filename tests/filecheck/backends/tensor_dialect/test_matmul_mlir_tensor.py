@@ -24,12 +24,36 @@ comp = impl.get_compiler(
     dump_file="matmul_mlir_tensor",
     print_source_ir=True,
     print_transformed_ir=True,
+    print_bufferization_ir=True,
 )
 module = comp.compile(sched)
 executor = module.get_executor(validate=True)
 res = executor.execute()
 print(f"CODE: {res}")
-# CHECK: // -----// IR Dump Before transform //----- //
+# CHECK: // -----// IR Dump Before Tensor Lowering //----- //
+# CHECK-NEXT: module {
+# CHECK-NEXT:   func.func @matmul(%arg0: tensor<4x512xf32> {llvm.noalias}, %arg1: tensor<512x32xf32> {llvm.noalias}, %arg2: memref<4x32xf32> {llvm.noalias}) {
+# CHECK-NEXT:     %0 = tensor.empty() : tensor<4x32xf32>
+# CHECK-NEXT:     %cst = arith.constant 0.000000e+00 : f32
+# CHECK-NEXT:     %1 = linalg.fill {__xtc_id_C_0_} ins(%cst : f32) outs(%0 : tensor<4x32xf32>) -> tensor<4x32xf32>
+# CHECK-NEXT:     %2 = linalg.matmul {__xtc_id_C_} ins(%arg0, %arg1 : tensor<4x512xf32>, tensor<512x32xf32>) outs(%1 : tensor<4x32xf32>) -> tensor<4x32xf32>
+# CHECK-NEXT:     bufferization.materialize_in_destination %2 in restrict writable %arg2 : (tensor<4x32xf32>, memref<4x32xf32>) -> ()
+# CHECK-NEXT:     return
+# CHECK-NEXT:   }
+# CHECK-NEXT: }
+# CHECK-NEXT:  
+# CHECK-NEXT: // -----// IR Dump After Tensor Lowering //----- //
+# CHECK-NEXT: module {
+# CHECK-NEXT:   func.func @matmul(%arg0: memref<4x512xf32> {llvm.noalias}, %arg1: memref<512x32xf32> {llvm.noalias}, %arg2: memref<4x32xf32> {llvm.noalias}) {
+# CHECK-NEXT:     %cst = arith.constant 0.000000e+00 : f32
+# CHECK-NEXT:     linalg.fill {__xtc_id_C_0_} ins(%cst : f32) outs(%arg2 : memref<4x32xf32>)
+# CHECK-NEXT:     linalg.matmul {__xtc_id_C_} ins(%arg0, %arg1 : memref<4x512xf32>, memref<512x32xf32>) outs(%arg2 : memref<4x32xf32>)
+# CHECK-NEXT:     memref.copy %arg2, %arg2 : memref<4x32xf32> to memref<4x32xf32>
+# CHECK-NEXT:     return
+# CHECK-NEXT:   }
+# CHECK-NEXT: }
+# CHECK-NEXT:  
+# CHECK-NEXT: // -----// IR Dump Before transform //----- //
 # CHECK-NEXT: module attributes {transform.with_named_sequence} {
 # CHECK-NEXT:   func.func @matmul(%arg0: memref<4x512xf32> {llvm.noalias}, %arg1: memref<512x32xf32> {llvm.noalias}, %arg2: memref<4x32xf32> {llvm.noalias}) {
 # CHECK-NEXT:     %cst = arith.constant 0.000000e+00 : f32

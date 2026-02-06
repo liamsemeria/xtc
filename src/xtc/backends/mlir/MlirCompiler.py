@@ -154,6 +154,8 @@ class MlirProgramCompiler:
         apply_transform_pass = MlirProgramApplyPasses(
             mlir_program=self._mlir_program,
         )
+        if self._config.print_bufferization_ir:
+            self.dump_ir("IR Dump Before Tensor Lowering")
         apply_transform_pass.run(
             [
                 "eliminate-empty-tensors",  # causes ops to write directly to out buffer
@@ -161,7 +163,7 @@ class MlirProgramCompiler:
             ]
         )
         if self._config.print_bufferization_ir:
-            self.dump_ir("IR Dump After Lowering")
+            self.dump_ir("IR Dump After Tensor Lowering")
 
     def _save_temp(self, fname: str, content: Any) -> None:
         if not self._config.save_temps:
