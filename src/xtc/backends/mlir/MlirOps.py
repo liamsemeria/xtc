@@ -162,15 +162,15 @@ class MlirOperatorMatmul(MlirOperator):
         elt_size = {"float32": 32, "float64": 64}[dtype]
         if block is None:
             ops_types = [
-                self.op_type(elt_type, shape)
-                for shape in [[Ki, Kk], [Kk, Kj], [Ki, Kj]]
+                self.op_type(elt_type, shape) for shape in [[Ki, Kk], [Kk, Kj]]
             ]
+            ops_types.append(MemRefType(elt_type, [Ki, Kj]))
             block = Block(arg_types=ops_types)
             args = block.args
+        has_tensor_result = isinstance(args[-1].type, TensorType)
         assert len(args) == 3
         assert all(isinstance(arg.type, self.op_type) for arg in args[:-1])
-        # output arg is always a memref (for now)
-        assert isinstance(args[-1].type, MemRefType)
+        assert not (has_tensor_result and self.op_type == MemRefType)
         with ImplicitBuilder(block):
             cst0 = arith.ConstantOp(builtin.FloatAttr(0, elt_size))
 
@@ -186,15 +186,18 @@ class MlirOperatorMatmul(MlirOperator):
                     outputs=(args[2],),
                 )
             else:
-                out_tensor_type = TensorType(elt_type, [Ki, Kj])
-                empty = tensor.EmptyOp(
-                    dynamic_sizes=[],
-                    tensor_type=out_tensor_type,
+                empty = (
+                    args[2]
+                    if has_tensor_result
+                    else tensor.EmptyOp(
+                        dynamic_sizes=[],
+                        tensor_type=TensorType(elt_type, [Ki, Kj]),
+                    ).results[0]
                 )
                 fill = linalg.FillOp(
-                    res=(empty.results[0].type,),
+                    res=(empty.type,),
                     inputs=(cst0.results[0],),
-                    outputs=(empty.results[0],),
+                    outputs=(empty,),
                 )
                 reduce = linalg.MatmulOp(
                     res=(fill.results[0].type,),

@@ -6,7 +6,7 @@ from typing import cast, Any, Type
 from typing_extensions import override
 
 from xdsl.dialects.func import FuncOp as xdslFuncOp
-from xdsl.dialects import func, memref, bufferization
+from xdsl.dialects import func, memref, tensor, bufferization
 from xdsl.dialects.builtin import MemRefType, TensorType, f32, f64, UnitAttr
 from xdsl.ir import Region, Block, Operation
 from xdsl.builder import ImplicitBuilder
@@ -79,12 +79,19 @@ class MlirGraphBackend(MlirBackend):
                 continue
             with ImplicitBuilder(block):
                 elt_type, shape = self._xdsl_elt_shape_from_tensortype(type)
-                alloca = memref.AllocaOp.get(
-                    return_type=elt_type,
-                    shape=shape,
-                    alignment=256,  # Take the default of dlpack lib
+                result_op = (
+                    tensor.EmptyOp(
+                        dynamic_sizes=[],
+                        tensor_type=self._xdsl_type_from_tensortype(type),
+                    )
+                    if self.xdsl_type == TensorType
+                    else memref.AllocaOp.get(
+                        return_type=elt_type,
+                        shape=shape,
+                        alignment=256,  # Take the default of dlpack lib
+                    )
                 )
-            variables[name] = alloca.results[0]
+            variables[name] = result_op.results[0]
         args = [variables[name] for name in names]
         _, attrs = operation.generate(block=block, args=args)
         last_node = attrs["nodes_map"].get("return_node_id")
