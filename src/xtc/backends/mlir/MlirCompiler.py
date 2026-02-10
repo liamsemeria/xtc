@@ -161,6 +161,7 @@ class MlirProgramCompiler:
                 "eliminate-empty-tensors",  # causes ops to write directly to out buffer
                 "one-shot-bufferize{bufferize-function-boundaries=1 function-boundary-type-conversion=identity-layout-map}",
                 "func.func(promote-buffers-to-stack)",
+                # "flatten-memref", not sure if this helpful or not
             ]
         )
         if self._config.print_bufferization_ir:

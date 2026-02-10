@@ -32,8 +32,8 @@ executor = module.get_executor(validate=True)
 res = executor.execute()
 print(f"CODE: {res}")
 # CHECK: // -----// IR Dump Before Tensor Lowering //----- //
-# CHECK-NEXT: #map = affine_map<(d0) -> (d0)>
-# CHECK-NEXT: #map1 = affine_map<(d0) -> ()>
+# CHECK-NEXT: #map = affine_map<(d0, d1) -> (d0, d1)>
+# CHECK-NEXT: #map1 = affine_map<(d0, d1) -> ()>
 # CHECK-NEXT: module {
 # CHECK-NEXT:   func.func @matmul_relu(%arg0: tensor<4x512xf32> {llvm.noalias}, %arg1: tensor<512x32xf32> {llvm.noalias}, %arg2: memref<4x32xf32> {llvm.noalias}) {
 # CHECK-NEXT:     %0 = tensor.empty() : tensor<4x32xf32>
@@ -41,62 +41,54 @@ print(f"CODE: {res}")
 # CHECK-NEXT:     %1 = linalg.fill {__xtc_id_matmul_0_} ins(%cst : f32) outs(%0 : tensor<4x32xf32>) -> tensor<4x32xf32>
 # CHECK-NEXT:     %2 = linalg.matmul {__xtc_id_matmul_} ins(%arg0, %arg1 : tensor<4x512xf32>, tensor<512x32xf32>) outs(%1 : tensor<4x32xf32>) -> tensor<4x32xf32>
 # CHECK-NEXT:     %3 = tensor.empty() : tensor<4x32xf32>
-# CHECK-NEXT:     %collapsed = tensor.collapse_shape %0 [[0, 1]] : tensor<4x32xf32> into tensor<128xf32>
-# CHECK-NEXT:     %4 = tensor.empty() : tensor<128xf32>
+# CHECK-NEXT:     %4 = tensor.empty() : tensor<4x32xf32>
 # CHECK-NEXT:     %cst_0 = arith.constant 0.000000e+00 : f32
-# CHECK-NEXT:     %5 = linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel"]} ins(%collapsed, %cst_0 : tensor<128xf32>, f32) outs(%4 : tensor<128xf32>) attrs =  {__xtc_id_relu_} {
+# CHECK-NEXT:     %5 = linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel", "parallel"]} ins(%0, %cst_0 : tensor<4x32xf32>, f32) outs(%4 : tensor<4x32xf32>) attrs =  {__xtc_id_relu_} {
 # CHECK-NEXT:     ^bb0(%in: f32, %in_1: f32, %out: f32):
 # CHECK-NEXT:       %6 = arith.maximumf %in, %in_1 : f32
 # CHECK-NEXT:       linalg.yield %6 : f32
-# CHECK-NEXT:     } -> tensor<128xf32>
-# CHECK-NEXT:     %expanded = tensor.expand_shape %5 [[0, 1]] output_shape [4, 32] : tensor<128xf32> into tensor<4x32xf32>
-# CHECK-NEXT:     bufferization.materialize_in_destination %expanded in restrict writable %arg2 : (tensor<4x32xf32>, memref<4x32xf32>) -> ()
+# CHECK-NEXT:     } -> tensor<4x32xf32>
+# CHECK-NEXT:     bufferization.materialize_in_destination %5 in restrict writable %arg2 : (tensor<4x32xf32>, memref<4x32xf32>) -> ()
 # CHECK-NEXT:     return
 # CHECK-NEXT:   }
 # CHECK-NEXT: }
 # CHECK-NEXT:  
 # CHECK-NEXT: // -----// IR Dump After Tensor Lowering //----- //
-# CHECK-NEXT: #map = affine_map<(d0) -> (d0)>
-# CHECK-NEXT: #map1 = affine_map<(d0) -> ()>
+# CHECK-NEXT: #map = affine_map<(d0, d1) -> (d0, d1)>
+# CHECK-NEXT: #map1 = affine_map<(d0, d1) -> ()>
 # CHECK-NEXT: module {
 # CHECK-NEXT:   func.func @matmul_relu(%arg0: memref<4x512xf32> {llvm.noalias}, %arg1: memref<512x32xf32> {llvm.noalias}, %arg2: memref<4x32xf32> {llvm.noalias}) {
 # CHECK-NEXT:     %alloca = memref.alloca() {alignment = 64 : i64} : memref<4x32xf32>
 # CHECK-NEXT:     %cst = arith.constant 0.000000e+00 : f32
 # CHECK-NEXT:     linalg.fill {__xtc_id_matmul_0_} ins(%cst : f32) outs(%alloca : memref<4x32xf32>)
 # CHECK-NEXT:     linalg.matmul {__xtc_id_matmul_} ins(%arg0, %arg1 : memref<4x512xf32>, memref<512x32xf32>) outs(%alloca : memref<4x32xf32>)
-# CHECK-NEXT:     %collapse_shape = memref.collapse_shape %alloca [[0, 1]] : memref<4x32xf32> into memref<128xf32>
-# CHECK-NEXT:     %alloca_0 = memref.alloca() {alignment = 64 : i64} : memref<128xf32>
-# CHECK-NEXT:     %cst_1 = arith.constant 0.000000e+00 : f32
-# CHECK-NEXT:     linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel"]} ins(%collapse_shape, %cst_1 : memref<128xf32>, f32) outs(%alloca_0 : memref<128xf32>) attrs =  {__xtc_id_relu_} {
-# CHECK-NEXT:     ^bb0(%in: f32, %in_2: f32, %out: f32):
-# CHECK-NEXT:       %0 = arith.maximumf %in, %in_2 : f32
+# CHECK-NEXT:     %cst_0 = arith.constant 0.000000e+00 : f32
+# CHECK-NEXT:     linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel", "parallel"]} ins(%alloca, %cst_0 : memref<4x32xf32>, f32) outs(%arg2 : memref<4x32xf32>) attrs =  {__xtc_id_relu_} {
+# CHECK-NEXT:     ^bb0(%in: f32, %in_1: f32, %out: f32):
+# CHECK-NEXT:       %0 = arith.maximumf %in, %in_1 : f32
 # CHECK-NEXT:       linalg.yield %0 : f32
 # CHECK-NEXT:     }
-# CHECK-NEXT:     %expand_shape = memref.expand_shape %alloca_0 [[0, 1]] output_shape [4, 32] : memref<128xf32> into memref<4x32xf32>
-# CHECK-NEXT:     memref.copy %expand_shape, %arg2 : memref<4x32xf32> to memref<4x32xf32>
+# CHECK-NEXT:     memref.copy %arg2, %arg2 : memref<4x32xf32> to memref<4x32xf32>
 # CHECK-NEXT:     return
 # CHECK-NEXT:   }
 # CHECK-NEXT: }
 # CHECK-NEXT:  
 # CHECK-NEXT: // -----// IR Dump Before transform //----- //
-# CHECK-NEXT: #map = affine_map<(d0) -> (d0)>
-# CHECK-NEXT: #map1 = affine_map<(d0) -> ()>
+# CHECK-NEXT: #map = affine_map<(d0, d1) -> (d0, d1)>
+# CHECK-NEXT: #map1 = affine_map<(d0, d1) -> ()>
 # CHECK-NEXT: module attributes {transform.with_named_sequence} {
 # CHECK-NEXT:   func.func @matmul_relu(%arg0: memref<4x512xf32> {llvm.noalias}, %arg1: memref<512x32xf32> {llvm.noalias}, %arg2: memref<4x32xf32> {llvm.noalias}) {
 # CHECK-NEXT:     %alloca = memref.alloca() {alignment = 64 : i64} : memref<4x32xf32>
 # CHECK-NEXT:     %cst = arith.constant 0.000000e+00 : f32
 # CHECK-NEXT:     linalg.fill {__xtc_id_matmul_0_} ins(%cst : f32) outs(%alloca : memref<4x32xf32>)
 # CHECK-NEXT:     linalg.matmul {__xtc_id_matmul_} ins(%arg0, %arg1 : memref<4x512xf32>, memref<512x32xf32>) outs(%alloca : memref<4x32xf32>)
-# CHECK-NEXT:     %collapse_shape = memref.collapse_shape %alloca [[0, 1]] : memref<4x32xf32> into memref<128xf32>
-# CHECK-NEXT:     %alloca_0 = memref.alloca() {alignment = 64 : i64} : memref<128xf32>
-# CHECK-NEXT:     %cst_1 = arith.constant 0.000000e+00 : f32
-# CHECK-NEXT:     linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel"]} ins(%collapse_shape, %cst_1 : memref<128xf32>, f32) outs(%alloca_0 : memref<128xf32>) attrs =  {__xtc_id_relu_} {
-# CHECK-NEXT:     ^bb0(%in: f32, %in_2: f32, %out: f32):
-# CHECK-NEXT:       %0 = arith.maximumf %in, %in_2 : f32
+# CHECK-NEXT:     %cst_0 = arith.constant 0.000000e+00 : f32
+# CHECK-NEXT:     linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel", "parallel"]} ins(%alloca, %cst_0 : memref<4x32xf32>, f32) outs(%arg2 : memref<4x32xf32>) attrs =  {__xtc_id_relu_} {
+# CHECK-NEXT:     ^bb0(%in: f32, %in_1: f32, %out: f32):
+# CHECK-NEXT:       %0 = arith.maximumf %in, %in_1 : f32
 # CHECK-NEXT:       linalg.yield %0 : f32
 # CHECK-NEXT:     }
-# CHECK-NEXT:     %expand_shape = memref.expand_shape %alloca_0 [[0, 1]] output_shape [4, 32] : memref<128xf32> into memref<4x32xf32>
-# CHECK-NEXT:     memref.copy %expand_shape, %arg2 : memref<4x32xf32> to memref<4x32xf32>
+# CHECK-NEXT:     memref.copy %arg2, %arg2 : memref<4x32xf32> to memref<4x32xf32>
 # CHECK-NEXT:     return
 # CHECK-NEXT:   }
 # CHECK-NEXT:   transform.named_sequence @_vecto(%arg0: !transform.any_op {transform.consumed}) {
@@ -124,8 +116,8 @@ print(f"CODE: {res}")
 # CHECK-NEXT: }
 # CHECK-NEXT:  
 # CHECK-NEXT: // -----// IR Dump After transform //----- //
-# CHECK-NEXT: #map = affine_map<(d0) -> (d0)>
-# CHECK-NEXT: #map1 = affine_map<(d0) -> ()>
+# CHECK-NEXT: #map = affine_map<(d0, d1) -> (d0, d1)>
+# CHECK-NEXT: #map1 = affine_map<(d0, d1) -> ()>
 # CHECK-NEXT: module attributes {transform.with_named_sequence} {
 # CHECK-NEXT:   func.func @matmul_relu(%arg0: memref<4x512xf32> {llvm.noalias}, %arg1: memref<512x32xf32> {llvm.noalias}, %arg2: memref<4x32xf32> {llvm.noalias}) {
 # CHECK-NEXT:     %alloca = memref.alloca() {alignment = 64 : i64} : memref<4x32xf32>
@@ -168,23 +160,20 @@ print(f"CODE: {res}")
 # CHECK-NEXT:         } {"./k"}
 # CHECK-NEXT:       } {"./j"}
 # CHECK-NEXT:     } {"./i"}
-# CHECK-NEXT:     %collapse_shape = memref.collapse_shape %alloca [[0, 1]] : memref<4x32xf32> into memref<128xf32>
-# CHECK-NEXT:     %alloca_3 = memref.alloca() {alignment = 64 : i64} : memref<128xf32>
-# CHECK-NEXT:     %cst_4 = arith.constant 0.000000e+00 : f32
-# CHECK-NEXT:     %c0_5 = arith.constant 0 : index
-# CHECK-NEXT:     %c128 = arith.constant 128 : index
+# CHECK-NEXT:     %cst_3 = arith.constant 0.000000e+00 : f32
+# CHECK-NEXT:     %c0_4 = arith.constant 0 : index
+# CHECK-NEXT:     %c4_5 = arith.constant 4 : index
 # CHECK-NEXT:     %c1_6 = arith.constant 1 : index
-# CHECK-NEXT:     scf.for %arg3 = %c0_5 to %c128 step %c1_6 {
-# CHECK-NEXT:       %subview = memref.subview %collapse_shape[%arg3] [1] [1] : memref<128xf32> to memref<1xf32, strided<[1], offset: ?>>
-# CHECK-NEXT:       %subview_7 = memref.subview %alloca_3[%arg3] [1] [1] : memref<128xf32> to memref<1xf32, strided<[1], offset: ?>>
-# CHECK-NEXT:       linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel"]} ins(%subview, %cst_4 : memref<1xf32, strided<[1], offset: ?>>, f32) outs(%subview_7 : memref<1xf32, strided<[1], offset: ?>>) attrs =  {__xtc_id_relu_} {
+# CHECK-NEXT:     scf.for %arg3 = %c0_4 to %c4_5 step %c1_6 {
+# CHECK-NEXT:       %subview = memref.subview %alloca[%arg3, 0] [1, 32] [1, 1] : memref<4x32xf32> to memref<1x32xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:       %subview_7 = memref.subview %arg2[%arg3, 0] [1, 32] [1, 1] : memref<4x32xf32> to memref<1x32xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:       linalg.generic {indexing_maps = [#map, #map1, #map], iterator_types = ["parallel", "parallel"]} ins(%subview, %cst_3 : memref<1x32xf32, strided<[32, 1], offset: ?>>, f32) outs(%subview_7 : memref<1x32xf32, strided<[32, 1], offset: ?>>) attrs =  {__xtc_id_relu_} {
 # CHECK-NEXT:       ^bb0(%in: f32, %in_8: f32, %out: f32):
 # CHECK-NEXT:         %0 = arith.maximumf %in, %in_8 : f32
 # CHECK-NEXT:         linalg.yield %0 : f32
 # CHECK-NEXT:       }
 # CHECK-NEXT:     } {"./i"}
-# CHECK-NEXT:     %expand_shape = memref.expand_shape %alloca_3 [[0, 1]] output_shape [4, 32] : memref<128xf32> into memref<4x32xf32>
-# CHECK-NEXT:     memref.copy %expand_shape, %arg2 : memref<4x32xf32> to memref<4x32xf32>
+# CHECK-NEXT:     memref.copy %arg2, %arg2 : memref<4x32xf32> to memref<4x32xf32>
 # CHECK-NEXT:     return
 # CHECK-NEXT:   }
 # CHECK-NEXT: }
