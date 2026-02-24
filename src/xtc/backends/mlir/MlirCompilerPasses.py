@@ -16,7 +16,7 @@ from mlir.dialects.transform.structured import (
     TileUsingForOp,
     VectorizeOp,
 )
-from mlir.dialects.transform.structured import structured_match
+from mlir.dialects.transform.structured import structured_match, FuseOp
 from mlir.dialects.transform.loop import loop_unroll
 from mlir.dialects.transform import SplitHandleOp
 from mlir.ir import (
@@ -184,13 +184,22 @@ class MlirProgramInsertTransformPass:
     def _generate_scheduling(self) -> OpResult:
         assert self._named_sequence is not None
         handle = None
-        for schedule in self._nodes_schedules:
+        for schedule in self._nodes_schedules[::-1]:
+            #if schedule != self._nodes_schedules[-1]:
+            #    continue
             self._create_sdist_meshes(schedule)
             handle = structured_match(
                 results_=transform.AnyOpType.get(),
                 target=self._named_sequence.bodyTarget,
                 op_attrs={schedule.node_ident: UnitAttr.get()},
             )
+            handle = FuseOp(
+                transform.AnyOpType.get(),
+                handle, 
+                tile_sizes = [1,1],
+                apply_cleanup=True,
+            ).results[0]
+            #return handle
             if schedule.permutation:
                 scheduling_state = self._generate_node_scheduling(
                     schedule=schedule,

@@ -19,6 +19,7 @@ print(graph)
 impl = Backend(graph, use_tensor_dialect=True)
 
 sch = impl.get_scheduler()
+sch.fuse_producer_at("c",0)
 sched = sch.schedule()
 
 comp = impl.get_compiler(
@@ -27,6 +28,7 @@ comp = impl.get_compiler(
     print_source_ir=True,
     print_transformed_ir=True,
     print_bufferization_ir=True,
+    print_lowered_ir=True,
 )
 module = comp.compile(sched)
 executor = module.get_executor(validate=True)

@@ -611,7 +611,7 @@ class MlirOperatorPad(MlirOperator):
             },
             "dims_sizes": [
                 self.dims_sizes(),
-                *([] if using_tensors else [self.dims_sizes()]),
+                *([] if False and using_tensors else [self.dims_sizes()]),
             ],
             "output_nodes": [copy],
         }
