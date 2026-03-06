@@ -20,15 +20,20 @@ impl = Backend(graph, use_tensor_dialect=True)
 
 sch = impl.get_scheduler()
 sch.fuse_producer_at("c",0)
+sch.tile("w", {"w1": 4})
+sch.tile("f", {"f1": 16})
+sch.interchange(["b", "h", "w", "f", "r", "s", "c", "w1", "f1"])
+#sch.vectorize(["f1"])
+#sch.unroll({"w1": 4, "c": 3})
 sched = sch.schedule()
 
 comp = impl.get_compiler(
     shared_lib=True,
     dump_file="pad_conv2d_nhwc_mini_mlir_tensor",
     print_source_ir=True,
-    print_transformed_ir=True,
-    print_bufferization_ir=True,
-    print_lowered_ir=True,
+    #print_transformed_ir=True,
+    #print_bufferization_ir=True,
+    #print_lowered_ir=True,
 )
 module = comp.compile(sched)
 executor = module.get_executor(validate=True)

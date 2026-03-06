@@ -229,4 +229,4 @@ class MlirNodeScheduler:
     def fuse_producer_at(
         self, axis: str, input_idx: int, root: str = DEFAULT_ROOT
     ) -> None:
-        self.fused += (axis, input_idx)
+        self.fused.append((axis, input_idx))
