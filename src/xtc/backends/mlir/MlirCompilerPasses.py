@@ -182,6 +182,8 @@ class MlirProgramInsertTransformPass:
             else:
                 transform.YieldOp([])
 
+    #def get_node_loop_fuses(self, schedule: MlirSchedule):
+        
     def _generate_scheduling(self) -> OpResult:
         assert self._named_sequence is not None
         handle = None
@@ -192,11 +194,25 @@ class MlirProgramInsertTransformPass:
             if schedule.fused:
                 prods = find_producer_handles(self._mlir_program.mlir_module, schedule.node_ident)
                 unscheduled_handles = unscheduled_handles.union(set(prods))
-                fused_producers[schedule.node_ident] = prods
+                # this could be a function liam           
+                dim_fuse_handles = {}
+                op_axes = {idx: f"./{ax}" for ax,idx in schedule.fused} # how it should be
+                for idx, name in enumerate(prods):
+                    if not name:
+                        continue
+                    # try to fuse on the outer loop(s) for these, f,w
+                    if str(name).startswith(schedule.node_ident):
+                        dim_fuse_handles["outer_loop_todo"] = name
+                    elif idx in op_axes:
+                        dim_fuse_handles[op_axes[idx]] = name
+                        # this is now a map like './c' -> __xtc_id_pad
+                        
+                    
+                fused_producers[schedule.node_ident] = dim_fuse_handles # used to be prods
                 fusing = True
         print(f"not scheduling {unscheduled_handles}")
-        #print(fused_producers)
-        #self._mlir_program.mlir_module.dump()
+        # TODO dont need fused_producers anymore
+        print(fused_producers)
             
         for schedule in self._nodes_schedules:
             if schedule.node_ident in unscheduled_handles:
@@ -225,36 +241,7 @@ class MlirProgramInsertTransformPass:
                     self._post_vectorize(scheduling_state)
                 handle = scheduling_state.handle
 
-                if schedule.fused:
-                    prev_fuse_loop = ""
-                    for idx, prod_name in enumerate(fused_producers[schedule.node_ident]):
-                        # maybe put producers into schedule to pass it into node scheduling? TODO
-                        if not prod_name:
-                            continue
-                        # find fuse_loop for idx, probably will change this with dict
-                        fuse_loop = None
-                        for fuse_spec in schedule.fused:
-                            if fuse_spec[1] == idx:
-                                fuse_loop = f"./{fuse_spec[0]}"
-                        # if the prod has the same source xtc node try to fuse it with prev loop
-                        # since its an additional arg it will not be in schedule.fused
-                        #if str(prod_name).startswith(schedule.node_ident): # this needs to happen on output dim like f, w
-                        #    fuse_loop = prev_fuse_loop
-                        if not fuse_loop:
-                            continue
-                        print(f"attempting fuse.... {prod_name}")
-                        prod_handle = structured_match(
-                            results_=transform.AnyOpType.get(),
-                            target=self._named_sequence.bodyTarget,
-                            op_attrs={fused_producers[schedule.node_ident][idx]: UnitAttr.get()},
-                        )
-                        handle, new_loop = FuseIntoContainingOp(
-                            fused_op_type_or_producer_op = prod_handle, 
-                            new_containing_op_type_or_containing_op = scheduling_state.all_loops[fuse_loop]
-                        ).results
-                        scheduling_state.all_loops[fuse_loop] = new_loop
-                        
-                        prev_fuse_loop = fuse_loop
+
         assert handle, "At least 1 operation should have been processed"
         return handle
 
@@ -334,6 +321,31 @@ class MlirProgramInsertTransformPass:
         if not permutation:
             return sched_state
 
+        # Fuse the loops untill the fuse dimension.
+        # Need to assume that there is only one dim in schedule.fused
+        already_tiled = set()
+        loop_names = []
+        fused_dim_index = 0
+        if schedule.fused:
+            fused_loop_names = [f"./{l}" for l,o in schedule.fused]
+            assert len(fused_loop_names) == 1
+            fused_dims = []
+            for loop_name in permutation:
+                dim_of_loop = schedule.dim_of_tile(loop_name)
+                index_of_dim = schedule.index_of_dim(dim_of_loop)
+                already_tiled.add(loop_name)
+                loop_names.append(loop_name)
+                if loop_name == fused_loop_names[0]:
+                    fused_dims += tiles_sizes_by_loops[loop_name][index_of_dim:]
+                    break
+                fused_dims.append(tiles_sizes_by_loops[loop_name][index_of_dim])
+            self._strip_mine_multiple(
+                loop_names=loop_names,
+                tiling_vector=fused_dims,
+                schedule=schedule,
+                sched_state=sched_state,
+            )
+                        
         # Materialize the loops
         for loop_name in permutation:
             # Manage the splits
@@ -361,7 +373,9 @@ class MlirProgramInsertTransformPass:
                 )
 
             # Manage the strip-mining
-            if loop_name in schedule.vectorization:
+            if loop_name in already_tiled:
+                continue
+            elif loop_name in schedule.vectorization:
                 self._vectorize(sched_state)
                 break
             elif loop_name in tiles_sizes_by_loops:
@@ -371,7 +385,6 @@ class MlirProgramInsertTransformPass:
                     schedule=schedule,
                     sched_state=sched_state,
                 )
-            # fuse here if the dim is a dim that wants to be fused TODO
 
         # For now on, the focus is on the outermost loop
         if sched_state.all_loops:
@@ -456,6 +469,35 @@ class MlirProgramInsertTransformPass:
         )
         sched_state.all_loops.update(inner_sched_state.all_loops)
         sched_state.handle = inner_sched_state.handle
+
+    def _strip_mine_multiple(
+        self,
+        loop_names: list[str],
+        tiling_vector: list[int],
+        schedule: MlirNodeSchedule,
+        sched_state: SchedulingState,
+    ) -> OpResult:
+        # TODO include permutation as interchange here
+        # parallelization would need to apply to all fused dims
+        parallelize = any([ln in schedule.parallelization for ln in loop_names])
+        if parallelize:
+            tiling_command = FuseOp(
+                transform.AnyOpType.get(), sched_state.handle, tile_sizes=tiling_vector, apply_cleanup=True, use_forall=True
+            )
+        else:
+            tiling_command = FuseOp(
+                transform.AnyOpType.get(), sched_state.handle, tile_sizes=tiling_vector, apply_cleanup=True
+            )
+ 
+        # Extract the results
+        sched_state.handle = tiling_command.results[0]
+        new_loop = tiling_command.results[-1]
+        for loop_name, new_loop in zip(loop_names,tiling_command.results[1:]):
+            sched_state.all_loops[loop_name] = new_loop
+            # Annotate the resulting loop if successfully generated
+            transform.AnnotateOp(new_loop, loop_name)
+
+        return new_loop
 
     def _strip_mine(
         self,
@@ -564,8 +606,8 @@ class MlirProgramInsertTransformPass:
                     target=sched_state.handle,
                     input_idx=input_idx,
                 )
+
 def find_producer_handles(module: Module, root_handle: str) -> list[str]:
-    # TODO: make ordered set to try to keep track of idx for fusion
     producer_handles = []
     root_op = None
     for func_op in module.body.operations:
@@ -599,6 +641,7 @@ class MlirProgramApplyTransformPass:
         transform = isinstance(transform_op, NamedSequenceOp)
         assert transform
         pm = PassManager(context=self._mlir_program.mlir_context)
+        #pm.enable_ir_printing()
         for opt in transform_opts:
             pm.add(opt)  # type: ignore # no attribte add?
         pm.run(self._mlir_program.mlir_module.operation)
