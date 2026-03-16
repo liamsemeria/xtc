@@ -18,6 +18,7 @@ from .parsing import (
     TileDecl,
     AxisDecl,
     Annotations,
+    YAMLParser,
 )
 from .loop_nest import LoopNestNode, LoopNest, SplitOrigin
 
@@ -260,7 +261,12 @@ class Descript:
 
     abstract_dims: list[str]
 
-    def apply(self, node_name: str, spec: dict[str, dict[str, Any]], scheduler: Scheduler) -> None:
+    def apply(
+        self,
+        node_name: str,
+        spec: dict[str, dict[str, Any]] | str,
+        scheduler: Scheduler,
+    ) -> None:
         """Parse, interpret, validate, and apply a schedule specification.
 
         Args:
@@ -272,6 +278,11 @@ class Descript:
             ScheduleInterpretError: If the spec cannot be interpreted.
             ScheduleValidationError: If the resulting schedule is invalid.
         """
+        # Parse a YAML specification into a dict
+        if isinstance(spec, str):
+            yaml_parser = YAMLParser()
+            spec = yaml_parser.parse(spec)
+
         # Parse the specification into an AST
         parser = ScheduleParser()
         ast = parser.parse(spec)
