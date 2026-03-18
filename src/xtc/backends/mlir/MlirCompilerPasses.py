@@ -16,11 +16,7 @@ from mlir.dialects.transform.structured import (
     TileUsingForOp,
     VectorizeOp,
 )
-from mlir.dialects.transform.structured import (
-    structured_match,
-    FuseOp,
-    ApplyDecomposeTensorPadPatternsOp,
-)
+from mlir.dialects.transform.structured import structured_match, FuseIntoContainingOp, ApplyDecomposeTensorPadPatternsOp
 from mlir.dialects.transform.loop import loop_unroll
 from mlir.dialects.transform import SplitHandleOp
 from mlir.ir import (
@@ -52,6 +48,7 @@ _SUPER_VECTORIZE_SEQ_NAME = "_super_vectorize"
 class SchedulingState:
     all_loops: dict[str, OpResult]
     handle: OpResult
+    prev_container: None | OpResult
 
 
 @dataclass
@@ -189,13 +186,30 @@ class MlirProgramInsertTransformPass:
     def _generate_scheduling(self) -> OpResult:
         assert self._named_sequence is not None
         handle = None
-        unscheduled_handles: set[str] = set()
+        unscheduled_handles = set()
+        fused_producers = {}
         for schedule in self._nodes_schedules:
             if schedule.fused:
-                prods = find_producer_handles(
-                    self._mlir_program.mlir_module, schedule.node_ident
-                )
+                prods = find_producer_handles(self._mlir_program.mlir_module, schedule.node_ident)
                 unscheduled_handles = unscheduled_handles.union(set(prods))
+                dim_fuse_handles = {} # map from loop dims to idents of producers (ex: c -> __xtc_id_pad_)
+                op_axes = {idx: ax for ax,idx in schedule.fused}
+                for idx, name in enumerate(prods):
+                    if not name:
+                        continue
+                    # TODO: try to fuse on the outer dim(s) for these linalg.fills
+                    if str(name).startswith(schedule.node_ident):
+                        dim_fuse_handles["outer_loop_todo"] = name
+                    elif idx in op_axes:
+                        dim_fuse_handles[f"./{op_axes[idx]}"] = name
+                        # need to fuse outer dims to get the producer to the correct dim
+                        # TODO account for loop interchange
+                        for dim in schedule.dims:
+                            if dim == op_axes[idx]:
+                                break
+                            dim_fuse_handles[f"./{dim}"] = name
+                     
+                fused_producers[schedule.node_ident] = dim_fuse_handles
 
         for schedule in self._nodes_schedules:
             if schedule.node_ident in unscheduled_handles:
@@ -212,14 +226,12 @@ class MlirProgramInsertTransformPass:
                     schedule=schedule,
                     root=list(schedule.permutation)[0],
                     handle=handle,
+                    fuse_axes=fused_producers.get(schedule.node_ident),
                 )
                 if schedule.vectorization or self._always_vectorize:
                     self._post_vectorize(scheduling_state)
                 handle = scheduling_state.handle
 
-        for schedule in self._nodes_schedules:
-            if schedule.node_name == "pad":
-                self._lower_tensor_pad(schedule)
 
         assert handle, "At least 1 operation should have been processed"
         return handle
@@ -303,36 +315,14 @@ class MlirProgramInsertTransformPass:
         schedule: MlirNodeSchedule,
         root: str,
         handle: OpResult,
+        fuse_axes: dict[str, str] | None,
     ) -> SchedulingState:
-        sched_state = SchedulingState({}, handle)
+        sched_state = SchedulingState({}, handle, None)
         split_state = SplitState(schedule.splits, root)
         tiles_sizes_by_loops = self._generate_tiling_insns(schedule)
         permutation = schedule.permutation[root]
         if not permutation:
             return sched_state
-
-        # Fuse the loops untill the fuse dimension.
-        # Need to assume that there is only one dim in schedule.fused
-        already_tiled = set()
-        fused_dim_index = 0
-        if schedule.fused:
-            fused_loop_names = [f"./{l}" for l, o in schedule.fused]
-            assert len(fused_loop_names) == 1
-            fused_dims = []
-            for loop_name in permutation:
-                dim_of_loop = schedule.dim_of_tile(loop_name)
-                index_of_dim = schedule.index_of_dim(dim_of_loop)
-                already_tiled.add(loop_name)
-                if loop_name == fused_loop_names[0]:
-                    fused_dims += tiles_sizes_by_loops[loop_name][index_of_dim:]
-                    break
-                fused_dims.append(tiles_sizes_by_loops[loop_name][index_of_dim])
-            self._strip_mine_fuse(
-                loop_names=list(already_tiled),
-                tiling_vector=fused_dims,
-                schedule=schedule,
-                sched_state=sched_state,
-            )
 
         # Materialize the loops
         for loop_name in permutation:
@@ -361,9 +351,7 @@ class MlirProgramInsertTransformPass:
                 )
 
             # Manage the strip-mining
-            if loop_name in already_tiled:
-                continue
-            elif loop_name in schedule.vectorization:
+            if loop_name in schedule.vectorization:
                 self._vectorize(sched_state)
                 break
             elif loop_name in tiles_sizes_by_loops:
@@ -373,7 +361,10 @@ class MlirProgramInsertTransformPass:
                     schedule=schedule,
                     sched_state=sched_state,
                 )
-
+            # Fuse the producers
+            if fuse_axes and loop_name in fuse_axes:
+                self._fuse_producers_into_loop(loop_name, fuse_axes, schedule, sched_state)
+        
         # For now on, the focus is on the outermost loop
         if sched_state.all_loops:
             sched_state.handle = next(iter(sched_state.all_loops.values()))
@@ -383,6 +374,33 @@ class MlirProgramInsertTransformPass:
             self._unroll(permutation, schedule, sched_state)
 
         return sched_state
+
+    def _fuse_producers_into_loop(self, loop_name: str, fuse_axes: dict[str, str], schedule: MlirNodeSchedule, sched_state: SchedulingState):
+        assert self._named_sequence is not None
+        for fuse_loop_name, fuse_op_name in fuse_axes.items():
+            if fuse_loop_name == loop_name:
+                # search for the producer in the parent or in the previous loop
+                target_container = sched_state.prev_container
+                if not target_container:
+                    target_container = self._named_sequence.bodyTarget
+                prod_handle = structured_match(
+                    results_=transform.AnyOpType.get(),
+                    target=target_container,
+                    op_attrs={fuse_op_name: UnitAttr.get()},
+                )
+                handle, new_loop = FuseIntoContainingOp(
+                    fused_op_type_or_producer_op = prod_handle, 
+                    new_containing_op_type_or_containing_op = sched_state.all_loops[loop_name]
+                ).results
+                # rematch the conv
+                new_handle = structured_match(
+                    results_=transform.AnyOpType.get(),
+                    target=target_container,
+                    op_attrs={schedule.node_ident: UnitAttr.get()},
+                )
+                sched_state.handle = new_handle
+                sched_state.all_loops[loop_name] = new_loop
+                sched_state.prev_container = new_loop
 
     def _generate_tiling_insns(
         self, schedule: MlirNodeSchedule
@@ -453,41 +471,10 @@ class MlirProgramInsertTransformPass:
         self, schedule: MlirNodeSchedule, root: str, sched_state: SchedulingState
     ):
         inner_sched_state = self._generate_node_scheduling(
-            schedule=schedule, root=root, handle=sched_state.handle
+            schedule=schedule, root=root, handle=sched_state.handle, fuse_axes=None
         )
         sched_state.all_loops.update(inner_sched_state.all_loops)
         sched_state.handle = inner_sched_state.handle
-
-    def _strip_mine_fuse(
-        self,
-        loop_names: list[str],
-        tiling_vector: list[int],
-        schedule: MlirNodeSchedule,
-        sched_state: SchedulingState,
-    ):
-        # not sure how fusion will interact with miltiple roots
-        interchange = []
-        for r, permutation in schedule.permutation.items():
-            for loop in permutation:
-                dim_of_loop = schedule.dim_of_tile(loop)
-                index_of_dim = schedule.index_of_dim(dim_of_loop)
-                interchange.append(index_of_dim)
-        interchange = interchange[: len(tiling_vector)]
-
-        tiling_command = FuseOp(
-            transform.AnyOpType.get(),
-            sched_state.handle,
-            tile_sizes=tiling_vector,
-            apply_cleanup=True,
-            tile_interchange=interchange,
-        )
-
-        # Extract the results
-        sched_state.handle = tiling_command.results[0]
-        for loop_name, new_loop in zip(loop_names, tiling_command.results[1:]):
-            sched_state.all_loops[loop_name] = new_loop
-            # Annotate the resulting loop if successfully generated
-            transform.AnnotateOp(new_loop, loop_name)
 
     def _strip_mine(
         self,
@@ -596,10 +583,8 @@ class MlirProgramInsertTransformPass:
                     target=sched_state.handle,
                     input_idx=input_idx,
                 )
-
-
 def find_producer_handles(module: Module, root_handle: str) -> list[str]:
-    producer_handles: list[str] = []
+    producer_handles = []
     root_op = None
     for func_op in module.body.operations:
         for op in func_op.regions[0].blocks[0].operations:
@@ -608,17 +593,17 @@ def find_producer_handles(module: Module, root_handle: str) -> list[str]:
                 break
         if root_op:
             break
-
+    
     if not root_op:
         return producer_handles
     for operand in root_op.operands:
         producer_op = operand.owner
+        producer_handles.append(None)
         if producer_op and hasattr(producer_op, "attributes"):
             for attr in producer_op.attributes:
                 if str(attr.name).startswith("__xtc_id_"):
-                    producer_handles.append(attr.name)
+                    producer_handles[-1] = attr.name
     return producer_handles
-
 
 class MlirProgramApplyTransformPass:
     def __init__(
@@ -632,7 +617,7 @@ class MlirProgramApplyTransformPass:
         transform = isinstance(transform_op, NamedSequenceOp)
         assert transform
         pm = PassManager(context=self._mlir_program.mlir_context)
-        # pm.enable_ir_printing()
+        #pm.enable_ir_printing()
         for opt in transform_opts:
             pm.add(opt)  # type: ignore # no attribte add?
         pm.run(self._mlir_program.mlir_module.operation)
