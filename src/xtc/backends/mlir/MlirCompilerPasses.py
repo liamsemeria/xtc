@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 The XTC Project Authors
 #
+from xtc.itf.schd.scheduler import DEFAULT_ROOT
 from dataclasses import dataclass
 from mlir.dialects import transform
 from mlir.dialects.transform import (
@@ -196,6 +197,12 @@ class MlirProgramInsertTransformPass:
                     self._mlir_program.mlir_module, schedule.node_ident
                 )
                 unscheduled_handles = unscheduled_handles.union(set(prods))
+            if schedule.node_name == "pad":
+                # ignoring pads allows for lowering into fill+insert_slice, but no tiling
+                unscheduled_handles.add(schedule.node_ident)
+
+        # FuseOp implementation doesn't need handles to fuse.
+        # so unscheduled handles is only useful if producer ops are tiled by default
 
         for schedule in self._nodes_schedules:
             if schedule.node_ident in unscheduled_handles:
@@ -219,12 +226,14 @@ class MlirProgramInsertTransformPass:
 
         for schedule in self._nodes_schedules:
             if schedule.node_name == "pad":
-                self._lower_tensor_pad(schedule)
+                self._lower_tensor_pad()
+                break
 
         assert handle, "At least 1 operation should have been processed"
         return handle
 
-    def _lower_tensor_pad(self, schedule: MlirNodeSchedule) -> None:
+    def _lower_tensor_pad(self) -> None:
+        # match all tensor pads and lower them
         assert self._named_sequence is not None
         func = structured_match(
             results_=transform.AnyOpType.get(),
@@ -312,11 +321,11 @@ class MlirProgramInsertTransformPass:
             return sched_state
 
         # Fuse the loops untill the fuse dimension.
-        # Need to assume that there is only one dim in schedule.fused
         already_tiled = set()
         fused_dim_index = 0
         if schedule.fused:
             fused_loop_names = [f"./{l}" for l, o in schedule.fused]
+            # an op cant be fused at multiple dims at the same time
             assert len(fused_loop_names) == 1
             fused_dims = []
             for loop_name in permutation:
@@ -465,15 +474,18 @@ class MlirProgramInsertTransformPass:
         schedule: MlirNodeSchedule,
         sched_state: SchedulingState,
     ):
-        # not sure how fusion will interact with miltiple roots
+        # only the scheduled op can be split,
+        # so fusion and splitting are incompatable
+        assert len(schedule.permutation.items()) == 1
+        permutation = schedule.permutation[DEFAULT_ROOT]
         interchange = []
-        for r, permutation in schedule.permutation.items():
-            for loop in permutation:
-                dim_of_loop = schedule.dim_of_tile(loop)
-                index_of_dim = schedule.index_of_dim(dim_of_loop)
-                interchange.append(index_of_dim)
+        for loop in permutation:
+            dim_of_loop = schedule.dim_of_tile(loop)
+            index_of_dim = schedule.index_of_dim(dim_of_loop)
+            interchange.append(index_of_dim)
         interchange = interchange[: len(tiling_vector)]
 
+        # note: mlir version needs to be updated to use forall loops in fusion
         tiling_command = FuseOp(
             transform.AnyOpType.get(),
             sched_state.handle,
