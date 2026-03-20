@@ -578,55 +578,64 @@ class MlirOperatorPad(MlirOperator):
                     indices = [linalg.IndexOp(i) for i in range(len(dims_value))]
                     input_indices = []
                     in_bounds_checks = []
-        
+
                     for dim_idx in range(len(dims_value)):
                         # input_index = output_index - low_padding
                         lo_const = arith.ConstantOp.create(
-                            properties={"value": builtin.IntegerAttr(lows[dim_idx], IndexType())},
+                            properties={
+                                "value": builtin.IntegerAttr(lows[dim_idx], IndexType())
+                            },
                             result_types=[IndexType()],
                         )
                         input_idx = arith.SubiOp(indices[dim_idx], lo_const)
                         input_indices.append(input_idx)
-            
+
                         # check to see if in the padding region or input tensor region
                         zero = arith.ConstantOp.create(
                             properties={"value": builtin.IntegerAttr(0, IndexType())},
                             result_types=[IndexType()],
                         )
                         size_const = arith.ConstantOp.create(
-                            properties={"value": builtin.IntegerAttr(dims_value_before_pad[dim_idx], IndexType())},
+                            properties={
+                                "value": builtin.IntegerAttr(
+                                    dims_value_before_pad[dim_idx], IndexType()
+                                )
+                            },
                             result_types=[IndexType()],
                         )
-            
+
                         ge_zero = arith.CmpiOp(input_idx, zero, "sge")
                         lt_size = arith.CmpiOp(input_idx, size_const, "slt")
-            
+
                         in_bounds_checks.append(ge_zero)
                         in_bounds_checks.append(lt_size)
-        
+
                     all_in_bounds = in_bounds_checks[0]
                     for check in in_bounds_checks[1:]:
                         all_in_bounds = arith.AndIOp(all_in_bounds, check)
-        
+
                     from xdsl.dialects import scf
+
                     if_region_then = Region([Block(arg_types=[])])
                     if_region_else = Region([Block(arg_types=[])])
-        
+
                     with ImplicitBuilder(if_region_then.blocks[0]):
-                        extracted = tensor.ExtractOp(tensor=args[0], indices=input_indices,result_type=elt_type)
+                        extracted = tensor.ExtractOp(
+                            tensor=args[0], indices=input_indices, result_type=elt_type
+                        )
                         scf.YieldOp(extracted)
                     with ImplicitBuilder(if_region_else.blocks[0]):
                         scf.YieldOp(cst0)
-        
+
                     if_op = scf.IfOp(
                         cond=all_in_bounds,
                         true_region=if_region_then,
                         false_region=if_region_else,
-                        return_types=[elt_type]
+                        return_types=[elt_type],
                     )
-        
+
                     linalg.YieldOp(if_op.results[0])
-    
+
                 rank = len(dims_value)
                 copy = linalg.GenericOp(
                     inputs=[],
