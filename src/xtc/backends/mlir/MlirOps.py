@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing_extensions import override
 from typing import Any, Type, TypeAlias, cast
 
-from xdsl.dialects import linalg, arith, builtin, memref, tensor
+from xdsl.dialects import linalg, arith, builtin, memref, tensor, scf
 from xdsl.dialects.builtin import (
     MemRefType,
     TensorType,
@@ -575,9 +575,14 @@ class MlirOperatorPad(MlirOperator):
                 block_in = Block(arg_types=[elt_type])
                 with ImplicitBuilder(block_in):
                     # gets the current iteration index for each dim (not constants)
-                    indices = [linalg.IndexOp(i) for i in range(len(dims_value))]
+                    output_indices = [linalg.IndexOp(i) for i in range(len(dims_value))]
                     input_indices = []
                     in_bounds_checks = []
+
+                    zero = arith.ConstantOp.create(
+                        properties={"value": builtin.IntegerAttr(0, IndexType())},
+                        result_types=[IndexType()],
+                    )
 
                     for dim_idx in range(len(dims_value)):
                         # input_index = output_index - low_padding
@@ -587,14 +592,10 @@ class MlirOperatorPad(MlirOperator):
                             },
                             result_types=[IndexType()],
                         )
-                        input_idx = arith.SubiOp(indices[dim_idx], lo_const)
+                        input_idx = arith.SubiOp(output_indices[dim_idx], lo_const)
                         input_indices.append(input_idx)
 
                         # check to see if in the padding region or input tensor region
-                        zero = arith.ConstantOp.create(
-                            properties={"value": builtin.IntegerAttr(0, IndexType())},
-                            result_types=[IndexType()],
-                        )
                         size_const = arith.ConstantOp.create(
                             properties={
                                 "value": builtin.IntegerAttr(
@@ -613,8 +614,6 @@ class MlirOperatorPad(MlirOperator):
                     all_in_bounds = in_bounds_checks[0]
                     for check in in_bounds_checks[1:]:
                         all_in_bounds = arith.AndIOp(all_in_bounds, check)
-
-                    from xdsl.dialects import scf
 
                     if_region_then = Region([Block(arg_types=[])])
                     if_region_else = Region([Block(arg_types=[])])
