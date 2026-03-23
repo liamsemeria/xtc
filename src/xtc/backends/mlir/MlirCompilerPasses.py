@@ -321,7 +321,7 @@ class MlirProgramInsertTransformPass:
             return sched_state
 
         # Fuse the loops untill the fuse dimension.
-        already_tiled = set()
+        already_tiled = []
         fused_dim_index = 0
         if schedule.fused:
             fused_loop_names = [f"./{l}" for l, o in schedule.fused]
@@ -331,13 +331,13 @@ class MlirProgramInsertTransformPass:
             for loop_name in permutation:
                 dim_of_loop = schedule.dim_of_tile(loop_name)
                 index_of_dim = schedule.index_of_dim(dim_of_loop)
-                already_tiled.add(loop_name)
+                already_tiled.append(loop_name)
                 if loop_name == fused_loop_names[0]:
                     fused_dims += tiles_sizes_by_loops[loop_name][index_of_dim:]
                     break
                 fused_dims.append(tiles_sizes_by_loops[loop_name][index_of_dim])
             self._strip_mine_fuse(
-                loop_names=list(already_tiled),
+                loop_names=already_tiled,
                 tiling_vector=fused_dims,
                 schedule=schedule,
                 sched_state=sched_state,
