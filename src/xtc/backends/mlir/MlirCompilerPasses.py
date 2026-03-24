@@ -397,15 +397,13 @@ class MlirProgramInsertTransformPass:
         sched_state: SchedulingState,
     ):
         assert self._named_sequence is not None
-        # search for the producer in the parent or in the previous loop
         target_container = sched_state.prev_container
 
-        # for fuse_loop_name, fuse_op_names in fuse_axes.items():
         fuse_op_names = fuse_axes[loop_name]
         for fuse_op_name in fuse_op_names:
-            # if fuse_loop_name == loop_name:
             if not target_container:
                 target_container = self._named_sequence.bodyTarget
+            # search for the producer in the parent or in the previous loop
             prod_handle = structured_match(
                 results_=transform.AnyOpType.get(),
                 target=target_container,
@@ -417,7 +415,7 @@ class MlirProgramInsertTransformPass:
                     loop_name
                 ],
             ).results
-            # rematch the conv
+            # rematch the scheduled op
             new_handle = structured_match(
                 results_=transform.AnyOpType.get(),
                 target=target_container,
