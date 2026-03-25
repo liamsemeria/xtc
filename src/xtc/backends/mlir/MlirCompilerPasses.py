@@ -325,8 +325,8 @@ class MlirProgramInsertTransformPass:
         fused_dim_index = 0
         if schedule.fused:
             fused_loop_names = [f"./{l}" for l, o in schedule.fused]
-            # an op cant be fused at multiple dims at the same time
-            assert len(fused_loop_names) == 1
+            # fuseop cant fuse ops at different dims
+            assert len(set(fused_loop_names)) == 1
             fused_dims = []
             for loop_name in permutation:
                 dim_of_loop = schedule.dim_of_tile(loop_name)
