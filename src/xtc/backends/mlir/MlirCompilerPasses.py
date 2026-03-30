@@ -194,7 +194,6 @@ class MlirProgramInsertTransformPass:
 
         unscheduled_handles = set()
         fused_producers = {}
-        fuse_xtc_node_ops = False  # wether or not to fuse linalg.fills, doesnt work
         for schedule in self._nodes_schedules:
             if schedule.fused:
                 prods = find_producer_handles(
@@ -207,11 +206,7 @@ class MlirProgramInsertTransformPass:
                 for idx, name in enumerate(prods):
                     if not name:
                         continue
-                    if str(name).startswith(schedule.node_ident) and fuse_xtc_node_ops:
-                        # fills are always last
-                        assert prev_fused_idx != -1
-                        fuse_destinations[name] = op_axes[prev_fused_idx]
-                    elif idx in op_axes:
+                    if idx in op_axes:
                         fuse_destinations[name] = op_axes[idx]
                         prev_fused_idx = idx
                 # need to fuse outer dims to get each producer to the correct dim

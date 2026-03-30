@@ -573,9 +573,10 @@ class MlirOperatorPad(MlirOperator):
                 fill = None
                 empty = args[1]
                 block_in = Block(arg_types=[elt_type])
+                rank = len(dims_value)
                 with ImplicitBuilder(block_in):
                     # gets the current iteration index for each dim (not constants)
-                    output_indices = [linalg.IndexOp(i) for i in range(len(dims_value))]
+                    output_indices = [linalg.IndexOp(i) for i in range(rank)]
                     input_indices = []
                     in_bounds_checks = []
 
@@ -584,8 +585,7 @@ class MlirOperatorPad(MlirOperator):
                         result_types=[IndexType()],
                     )
 
-                    for dim_idx in range(len(dims_value)):
-                        # input_index = output_index - low_padding
+                    for dim_idx in range(rank):
                         lo_const = arith.ConstantOp.create(
                             properties={
                                 "value": builtin.IntegerAttr(lows[dim_idx], IndexType())
@@ -635,7 +635,6 @@ class MlirOperatorPad(MlirOperator):
 
                     linalg.YieldOp(if_op.results[0])
 
-                rank = len(dims_value)
                 copy = linalg.GenericOp(
                     inputs=[],
                     outputs=[empty],
