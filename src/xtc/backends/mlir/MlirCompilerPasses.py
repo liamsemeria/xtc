@@ -32,6 +32,7 @@ from mlir.ir import (
 )
 from mlir.passmanager import PassManager
 from mlir.ir import Module
+import subprocess
 
 # Import SDist if available
 try:
@@ -192,7 +193,7 @@ class MlirProgramInsertTransformPass:
         assert self._named_sequence is not None
         handle = None
 
-        unscheduled_handles = set()
+        unscheduled_handles: set[str | None] = set()
         fused_producers = {}
         for schedule in self._nodes_schedules:
             if schedule.fused:
@@ -211,7 +212,7 @@ class MlirProgramInsertTransformPass:
                         prev_fused_idx = idx
                 # need to fuse outer dims to get each producer to the correct dim
                 # assumes split and fuse are incompatible
-                dim_fuse_handles = {}
+                dim_fuse_handles: dict[str, list[str]] = {}
                 for fuse_handle, fuse_dest in fuse_destinations.items():
                     for dim in schedule.permutation[DEFAULT_ROOT]:
                         dim_fuse_handles.setdefault(dim, []).append(fuse_handle)
@@ -603,8 +604,9 @@ class MlirProgramInsertTransformPass:
                 )
 
 
-def find_producer_handles(module: Module, root_handle: str) -> list[str]:
-    producer_handles = []
+# returns the handles for each operand of the operation specified by root_handle
+def find_producer_handles(module: Module, root_handle: str) -> list[str | None]:
+    producer_handles: list[str | None] = []
     root_op = None
     for func_op in module.body.operations:
         for op in func_op.regions[0].blocks[0].operations:
@@ -653,23 +655,35 @@ class MlirProgramApplyTransformPass:
                 break
 
 
-class MlirProgramApplyPasses:
-    def __init__(
-        self,
-        mlir_program: RawMlirProgram,
-    ) -> None:
+class MlirProgramApplyXTCOpt:
+    def __init__(self, mlir_program: RawMlirProgram) -> None:
         self._mlir_program = mlir_program
 
     def run(self, pass_names: list[str]) -> None:
-        ctx = self._mlir_program.mlir_context
-        pm = PassManager(context=ctx)
-        for name in pass_names:
-            pm.add(name)  # type: ignore # no attribute add
-        pm.run(self._mlir_program.mlir_module.operation)
+        # serialize current module to text
+        mlir_text = str(self._mlir_program.mlir_module)
+
+        # build pipeline string e.g. "builtin.module(reduce-extract-slices,other-pass)"
+        pipeline = "builtin.module(" + ",".join(pass_names) + ")"
+
+        result = subprocess.run(
+            ["xtc-opt", f"--pass-pipeline={pipeline}", "-"],
+            input=mlir_text,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"xtc-opt failed:\n{result.stderr}")
+
+        # parse the result back into the existing context
+        self._mlir_program.module = Module.parse(
+            result.stdout, self._mlir_program.mlir_context
+        )
 
 
 def apply_bufferization_passes(mlir_program: RawMlirProgram):
-    apply_passes = MlirProgramApplyPasses(mlir_program)
+    apply_passes = MlirProgramApplyXTCOpt(mlir_program)
     bufferize_options = [
         "bufferize-function-boundaries=1",
         "function-boundary-type-conversion=identity-layout-map",
@@ -677,6 +691,7 @@ def apply_bufferization_passes(mlir_program: RawMlirProgram):
     ]
     apply_passes.run(
         [
+            "reduce-extract-slices",
             "canonicalize",
             "cse",
             "eliminate-empty-tensors",  # causes ops to write directly to out buffer
@@ -687,8 +702,3 @@ def apply_bufferization_passes(mlir_program: RawMlirProgram):
             "func.func(promote-buffers-to-stack)",
         ]
     )
-
-
-def pre_transform_tensor_passes(mlir_program: RawMlirProgram):
-    apply_passes = MlirProgramApplyPasses(mlir_program)
-    # apply_passes.run(["eliminate-empty-tensors"])

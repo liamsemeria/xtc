@@ -611,7 +611,7 @@ class MlirOperatorPad(MlirOperator):
                         in_bounds_checks.append(ge_zero)
                         in_bounds_checks.append(lt_size)
 
-                    all_in_bounds = in_bounds_checks[0]
+                    all_in_bounds: arith.CmpiOp | arith.AndIOp = in_bounds_checks[0]
                     for check in in_bounds_checks[1:]:
                         all_in_bounds = arith.AndIOp(all_in_bounds, check)
 
@@ -620,7 +620,9 @@ class MlirOperatorPad(MlirOperator):
 
                     with ImplicitBuilder(if_region_then.blocks[0]):
                         extracted = tensor.ExtractOp(
-                            tensor=args[0], indices=input_indices, result_type=elt_type
+                            tensor=args[0],
+                            indices=input_indices,  # type: ignore
+                            result_type=elt_type,
                         )
                         scf.YieldOp(extracted)
                     with ImplicitBuilder(if_region_else.blocks[0]):
