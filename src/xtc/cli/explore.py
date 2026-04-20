@@ -100,24 +100,63 @@ def xtc_conv2d_graph(
     return gb.graph
 
 
-def tvm_impl(graph: Graph) -> tuple[Backend, str]:
+def xtc_pad2d_conv2d_graph(
+    n: int,
+    h: int,
+    w: int,
+    f: int,
+    r: int,
+    s: int,
+    c: int,
+    SH: int,
+    SW: int,
+    ftype: str,
+    name: str = "pad2d_conv2d",
+) -> Graph:
+    import xtc.graphs.xtc.op as O
+
+    dtype = DTYPES_MAP[ftype]
+    H = h * SH + r - 1
+    W = w * SW + s - 1
+    a = O.tensor((n, H - 4, W - 4, c), dtype, name="A")
+    b = O.tensor((r, s, c, f), dtype, name="B")
+    with O.graph(name=name) as gb:
+        p = O.pad2d(a, padding=2, axes=(1, 2), name="P")
+        O.conv2d(p, b, stride=(SH, SW), name="O")
+    return gb.graph
+
+
+def xtc_matmul_relu_graph(
+    i: int, j: int, k: int, ftype: str, name: str = "matmul"
+) -> Graph:
+    import xtc.graphs.xtc.op as O
+
+    dtype = DTYPES_MAP[ftype]
+    a = O.tensor((i, k), dtype, name="A")
+    b = O.tensor((k, j), dtype, name="B")
+    with O.graph(name=name) as gb:
+        c = O.matmul(a, b, name="C")
+        O.relu(c, name="D")
+    return gb.graph
+
+
+def tvm_impl(graph: Graph, **kwargs) -> tuple[Backend, str]:
     from xtc.backends.tvm import Backend
 
     impl = Backend(graph)
     return impl, "tvm"
 
 
-def jir_impl(graph: Graph) -> tuple[Backend, str]:
+def jir_impl(graph: Graph, **kwargs) -> tuple[Backend, str]:
     from xtc.backends.jir import Backend
 
     impl = Backend(graph)
     return impl, "jir"
 
 
-def mlir_impl(graph: Graph) -> tuple[Backend, str]:
+def mlir_impl(graph: Graph, **kwargs) -> tuple[Backend, str]:
     from xtc.backends.mlir import Backend
-
-    impl = Backend(graph)
+    impl = Backend(graph, use_tensor_dialect=kwargs.get("use_tensors",False))
     return impl, "mlir"
 
 
@@ -184,7 +223,7 @@ def compile_one(
     assert isinstance(in_x, list), f"X not a list: {in_x} ({type(in_x)})"
     logger.debug("Compile: %s: %s: %s...", ident, backend, in_x)
     implementer = OPERATORS[args.operator]["backends"][backend]["implementer"]
-    impl, backend_name = implementer(graph)
+    impl, backend_name = implementer(graph, use_tensors=args.use_tensors)
     assert backend_name == backend
     scheduler = impl.get_scheduler()
     node_scheduler = scheduler  # by default the output node is scheduled
@@ -204,6 +243,7 @@ def compile_one(
             dict(
                 print_source_ir=True,
                 print_transformed_ir=True,
+                print_bufferization_ir=args.use_tensors,
                 print_lowered_ir=True,
                 print_assembly=True,
                 color=False,
@@ -768,6 +808,27 @@ OPERATORS = {
         },
         "default_strategy": "tile_oo",
     },
+    "pad2d_conv2d": {
+        "dims": ["n", "h", "w", "f", "r", "s", "c", "SH", "SW"],
+        "default_dims": [1, 112, 112, 64, 7, 7, 3, 2, 2],
+        "default_type": "f32",
+        "inputs": [
+            ["n", "h * SH + r - 1", "w * SW + s - 1", "c"],
+            ["r", "s", "c", "f"],
+        ],
+        "outputs": [["n", "h", "w", "f"]],
+        "reference_impl": None,  # defaults to graph evaluation
+        "operation": xtc_pad2d_conv2d_graph,
+        "backends": {
+            "mlir": {
+                "implementer": mlir_impl,
+            },
+            "tvm": {
+                "implementer": tvm_impl,
+            },
+        },
+        "default_strategy": "tile_oo",
+    },
     "relu": {
         "dims": ["i"],
         "default_dims": [512 * 1024],
@@ -779,6 +840,27 @@ OPERATORS = {
         "backends": {
             "tvm": {
                 "implementer": tvm_impl,
+            },
+        },
+        "default_strategy": "tile_oo",
+    },
+    "matmul_relu": {
+        "dims": ["i", "j", "k"],
+        "default_dims": [512, 1024, 128],
+        "default_type": "f32",
+        "inputs": [["i", "k"], ["k", "j"]],
+        "outputs": [["i", "j"]],
+        "reference_impl": None,  # defaults to graph evaluation
+        "operation": xtc_matmul_relu_graph,
+        "backends": {
+            "mlir": {
+                "implementer": mlir_impl,
+            },
+            "tvm": {
+                "implementer": tvm_impl,
+            },
+            "jir": {
+                "implementer": jir_impl,
             },
         },
         "default_strategy": "tile_oo",
@@ -1037,6 +1119,12 @@ def main():
     )
     parser.add_argument(
         "--dump", action=argparse.BooleanOptionalAction, help="dump IR while generating"
+    )
+    parser.add_argument(
+        "--use-tensors",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="use tensors instead of memref for the mlir backend",
     )
     args = parser.parse_args()
 
