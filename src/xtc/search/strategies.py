@@ -340,15 +340,16 @@ class BaseStrategyPRTScheme(BaseStrategy):
     """Base Strategy for PR... tiling sequences.
 
     Given P-axes: p1,...pn and R-axes: r1,...rn.
-    We define several tile reodering item as:
+    We define several tile reodering items as:
     - `P`: all P-axes in order
     - `R`: all R-axes in order
     - `T`: all axes in order
     - `U`: all axes in random order, TODO: not implemented yet
     - `O`: first P-axis then R-axes, then remaining P-axis
 
-    We also define dditional items which can be mixed with tile items:
+    We also define additional items which can be mixed with tile items:
     - `W`: add an output write buffer at this level
+    - `F`: fuse producers at this level
 
     Then we can define scheme as a sequence of items, for instance:
     - `PRP`: P-axes, R-axes then a for all P-axes
@@ -382,6 +383,7 @@ class BaseStrategyPRTScheme(BaseStrategy):
             self._base_axis,
             self._item_map,
             self._w_axes,
+            self._f_axis,
         ) = self._init_order_tiles()
         self._tiles_idx = self._init_tiles_idx()
         self._x_size = sum([level - 1 for level in self._tiles_levels.values()])
@@ -395,30 +397,37 @@ class BaseStrategyPRTScheme(BaseStrategy):
     def _init_order_tiles(
         self,
     ) -> tuple[
-        list[str], dict[str, int], dict[str, str], dict[int, list[str]], list[str]
+        list[str], dict[str, int], dict[str, str], dict[int, list[str]], list[str], str
     ]:
         base_axis = {}
         item_map = {}
         order = []
         w_axes = []
+        f_axis = ""
         levels = {axis: 0 for axis in self._axes}
         prev_axis = ""
         for item_idx, item in enumerate(self._scheme):
             axis_lst: list[str] = []
-            if item == "P":
-                axis_lst = self._p_axes
-            elif item == "R":
-                axis_lst = self._r_axes
-            elif item == "T":
-                axis_lst = self._axes
-            elif item == "O":
-                # Item O is outer parallel first, reductions, remaining parallels
-                axis_lst = [*self._p_axes[:1], *self._r_axes, *self._p_axes[1:]]
-            else:
-                assert item == "W"
-                axis_lst = []
-                assert prev_axis
-                w_axes.append(prev_axis)
+            match item:
+                case "P":
+                    axis_lst = self._p_axes
+                case "R":
+                    axis_lst = self._r_axes
+                case "T":
+                    axis_lst = self._axes
+                case "O":
+                    # Item O is outer parallel first, reductions, remaining parallels
+                    axis_lst = [*self._p_axes[:1], *self._r_axes, *self._p_axes[1:]]
+                case "F":
+                    assert prev_axis
+                    axis_lst = []
+                    f_axis = prev_axis
+                    pass
+                case _:
+                    assert item == "W"
+                    axis_lst = []
+                    assert prev_axis
+                    w_axes.append(prev_axis)
             item_axes = []
             for axis in axis_lst:
                 tiled_axis = f"{axis}" if levels[axis] == 0 else f"{axis}{levels[axis]}"
@@ -428,7 +437,7 @@ class BaseStrategyPRTScheme(BaseStrategy):
             order.extend(item_axes)
             item_map[item_idx] = item_axes
             prev_axis = item_axes[-1] if item_axes else ""
-        return order, levels, base_axis, item_map, w_axes
+        return order, levels, base_axis, item_map, w_axes, f_axis
 
     def _init_tiles_idx(self) -> dict[str, int]:
         tiles_idx = {}
@@ -635,6 +644,8 @@ class BaseStrategyPRTScheme(BaseStrategy):
         sch.unroll(unroll_axes)
         for axis in buffers:
             sch.buffer_at(axis)
+        if self._f_axis != "":
+            sch.fuse_producer_at(self._f_axis, 0)
 
     def _check_divisibility_from_tiles(self, tiles: dict[str, int]) -> bool:
         divisible = all(
@@ -842,6 +853,54 @@ class Strategy_PPWRPRPvr(Strategy_PPWRPRP):
         return samples
 
 
+class Strategy_PPFRPRP(BaseStrategyPRTScheme):
+    """Strategy for Ansor like tiling and fusion.
+
+    Same as Strategy_PPRPRP, but with producer fusion.
+    Where F in PPFRPRP is the location of the fused computation.
+    """
+
+    def __init__(self, graph: Graph, **kwargs: Any) -> None:
+        super().__init__(graph, scheme="PPFRPRP", **kwargs)
+
+
+class Strategy_PPFRPRPv(Strategy_PPFRPRP):
+    """Strategy for Ansor like tiling and write buffer with space vectorization.
+
+    Same as Strategy_PPFRPRP, but with an additional constraint for the
+    space to have the inner axis vectorized as in strategy PPRPRPV.
+    """
+
+    def __init__(self, graph: Graph, **kwargs: Any) -> None:
+        super().__init__(graph, **kwargs)
+
+    @override
+    def _filter(self, samples: Iterator[VecSample]) -> Iterator[VecSample]:
+        samples = super()._filter(samples)
+        samples = self._filter_vectorized(samples, "filtered_vec")
+        return samples
+
+
+class Strategy_PPFRPRPvr(Strategy_PPFRPRP):
+    """Strategy for Ansor like tiling and write buffer with space constraints.
+
+    Same as Strategy_PPFRPRP, but with additional constraints for the
+    space as in strategy PPRPRPvr.
+    """
+
+    def __init__(self, graph: Graph, **kwargs: Any) -> None:
+        super().__init__(graph, **kwargs)
+
+    @override
+    def _filter(self, samples: Iterator[VecSample]) -> Iterator[VecSample]:
+        samples = super()._filter(samples)
+        samples = self._filter_vectorized(samples, "filtered_vec")
+        samples = self._filter_reg_num(samples, 1, "filtered_reg")
+        samples = self._filter_l1_size(samples, 2, "filtered_l1")
+        samples = self._filter_l2_size(samples, 3, "filtered_l2")
+        return samples
+
+
 class Strategy_GOTO(BaseStrategy):
     """Strategy for Goto tiling with vectorisation.
 
@@ -963,6 +1022,9 @@ class Strategies:
         "tile_ppwrprp": Strategy_PPWRPRP,
         "tile_ppwrprp_v": Strategy_PPWRPRPv,
         "tile_ppwrprp_vr": Strategy_PPWRPRPvr,
+        "tile_ppfrprp": Strategy_PPFRPRP,
+        "tile_ppfrprp_v": Strategy_PPFRPRPv,
+        "tile_ppfrprp_vr": Strategy_PPFRPRPvr,
         "tile_goto": Strategy_GOTO,
         "tile_goto_r": Strategy_GOTO_R,
     }

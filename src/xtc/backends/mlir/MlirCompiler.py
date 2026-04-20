@@ -210,15 +210,26 @@ class MlirProgramCompiler:
 
         save_temp(src_ir_dump_file, self._mlir_program.mlir_module)
 
+        if self._config.debug:
+            print("inserting transform pass")
         self.mlir_insert_transform_pass()
         save_temp(mlir_btrn_dump_file, self._mlir_program.mlir_module)
 
+        if self._config.debug:
+            print("applying transform pass")
         self.mlir_apply_transform_pass()
         save_temp(mlir_atrn_dump_file, self._mlir_program.mlir_module)
 
+        if self._config.debug:
+            print("applying bufferization pass")
         self.mlir_apply_tensor_lowering_pass()
+        
         if self._config.using_tensors_hint:
+            if self._config.debug:
+                print("applying post bufferization transforms")
             self.mlir_apply_post_bufferize_transform_pass()
             save_temp(mlir_tlwr_dump_file, self._mlir_program.mlir_module)
 
+        if self._config.debug:
+            print("generating code")
         self._target.generate_code_for_target(self._mlir_program, dump_file=dump_file)

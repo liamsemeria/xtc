@@ -711,6 +711,21 @@ class MlirProgramApplyTransformPass:
             break
 
 
+class MlirProgramApplyPasses:
+    def __init__(
+        self,
+        mlir_program: RawMlirProgram,
+    ) -> None:
+        self._mlir_program = mlir_program
+
+    def run(self, pass_names: list[str]) -> None:
+        ctx = self._mlir_program.mlir_context
+        pm = PassManager(context=ctx)
+        for name in pass_names:
+            pm.add(name)  # type: ignore # no attribute add
+        pm.run(self._mlir_program.mlir_module.operation)
+
+
 class MlirProgramApplyXTCOpt:
     def __init__(self, mlir_program: RawMlirProgram) -> None:
         self._mlir_program = mlir_program
@@ -739,7 +754,8 @@ class MlirProgramApplyXTCOpt:
 
 
 def apply_bufferization_passes(mlir_program: RawMlirProgram):
-    apply_passes = MlirProgramApplyXTCOpt(mlir_program)
+    #apply_passes = MlirProgramApplyXTCOpt(mlir_program)
+    apply_passes = MlirProgramApplyPasses(mlir_program)
     bufferize_options = [
         "bufferize-function-boundaries=1",
         "function-boundary-type-conversion=identity-layout-map",
@@ -747,7 +763,7 @@ def apply_bufferization_passes(mlir_program: RawMlirProgram):
     ]
     apply_passes.run(
         [
-            "reduce-extract-slices",
+            # "reduce-extract-slices",
             "canonicalize",
             "cse",
             "eliminate-empty-tensors",  # causes ops to write directly to out buffer
