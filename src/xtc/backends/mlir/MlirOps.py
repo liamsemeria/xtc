@@ -641,6 +641,7 @@ class MlirOperatorPad(MlirOperator):
                 empty = args[1]
                 block_in = Block(arg_types=[elt_type])
                 rank = len(dims_value)
+                # pad written as a linalg.generic to enable producer fusion
                 with ImplicitBuilder(block_in):
                     # gets the current iteration index for each dim (not constants)
                     output_indices = [linalg.IndexOp(i) for i in range(rank)]
