@@ -455,7 +455,7 @@ class XTCOperPad2D(XTCOperator):
             assert isinstance(padding, (tuple, dict)), (
                 f"padding for pad2d of wrong type, expect int or tuple or dict: {padding}"
             )
-            if len(padding) == 1:
+            if not isinstance(padding, dict) and len(padding) == 1:
                 padding = {
                     axes[0]: (padding[0], padding[0]),
                     axes[1]: (padding[0], padding[0]),
