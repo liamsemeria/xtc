@@ -24,9 +24,8 @@ from .parsing import (
     AxisDecl,
     Annotations,
     YAMLParser,
+    literal,
 )
-
-literal = int | str
 
 
 _NODE_SEP = "/"
@@ -130,9 +129,7 @@ class ScheduleInterpreter:
             if isinstance(a, int) and not isinstance(b, int):
                 a, b = b, a
             a, b = str(a), str(b)
-            for c in node.constraints:
-                node.constraints.remove(c)
-                node.constraints.append(c.replace(a, b))
+            node.constraints = [c.replace(a, b) for c in node.constraints]
 
         # Check that all splits are complete
         for axis, cut in previous_cut.items():
@@ -397,7 +394,7 @@ class ScheduleInterpreter:
         item: SplitDecl,
         cut: literal | None,
         x: literal,
-    ) -> literal | None:
+    ) -> None:
         """Check that split intervals are valid and contiguous."""
         y = item.end
 
@@ -418,23 +415,14 @@ class ScheduleInterpreter:
                 raise ScheduleInterpretError(
                     f"{item}: Splitting ends at {cut} and begins at {x}. These need to be the same."
                 )
-        if y is None:
-            return None
 
-        if isinstance(x, int):
-            if isinstance(y, int):
-                if x >= y:
-                    raise ScheduleInterpretError(
-                        f"{item}: the ending point should be greater than the starting point."
-                    )
-                else:
-                    return y - x
-            if x == 0:
-                return y
-        return None
+        if isinstance(x, int) and isinstance(y, int) and x >= y:
+            raise ScheduleInterpretError(
+                f"{item}: the ending point should be greater than the starting point."
+            )
 
 
-@dataclass
+@dataclass(frozen=True)
 class Descript:
     """Applies a parsed and interpreted schedule to a Scheduler.
 
