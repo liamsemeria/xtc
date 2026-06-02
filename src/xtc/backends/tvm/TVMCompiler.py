@@ -7,7 +7,6 @@ from typing_extensions import override
 from collections.abc import Sequence
 import tempfile
 from pathlib import Path
-import tarfile
 import shutil
 import subprocess
 import shlex
@@ -19,6 +18,7 @@ from xtc.targets.host import HostModule
 import xtc.backends.tvm as backend
 import xtc.itf as itf
 from xtc.utils.text import jinja_generate_file
+from xtc.utils.tarfile import TarFile
 
 from xtc.utils.host_tools import disassemble, target_triple
 
@@ -359,8 +359,9 @@ class TVMCompiler(itf.comp.Compiler):
             tmp_dir_path = Path(tmp_dir)
             tar_file = tmp_dir_path / f"{cname}.tar"
             built.export_library(tar_file)
-            with tarfile.open(tar_file) as tf:
-                tf.extractall(tmp_dir, filter="data")
+            with TarFile.open(tar_file) as tf:
+                members = [info for info in tf.getmembers() if info.name.endswith(".c")]
+                tf.extractall(tmp_dir, members=members, filter="data")
             out_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(tmp_dir_path / "lib1.c", out_dir / f"{out_base}.c")
 
