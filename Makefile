@@ -52,7 +52,7 @@ check-lit:
 	lit -v tests/filecheck
 
 check-lit-c:
-	[ `uname -s` = Darwin ] || env XTC_MLIR_TARGET=c lit -v tests/filecheck/backends tests/filecheck/mlir_loop
+	env XTC_MLIR_TARGET=c lit -v tests/filecheck/backends tests/filecheck/mlir_loop
 
 check-lit-nvgpu:
 	[ `uname -s` = Darwin ] || env XTC_MLIR_TARGET=nvgpu lit -v tests/filecheck/backends tests/filecheck/mlir_loop tests/filecheck/evaluation

@@ -60,7 +60,7 @@ llc_opts = [
 
 opt_opts = ["-O3", "--enable-unsafe-fp-math", "--fp-contract=fast"]
 
-target_cc_opts = ["-O3", "-ffast-math", "--fp-contract=fast"]
+target_cc_opts = ["-O3", "-ffast-math", "-ffp-contract=fast"]
 
 cc_opts = ["-O3", "-march=native"]
 
