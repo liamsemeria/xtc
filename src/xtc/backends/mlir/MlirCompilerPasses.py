@@ -16,7 +16,11 @@ from mlir.dialects.transform.structured import (
     TileUsingForOp,
     VectorizeOp,
 )
-from mlir.dialects.transform.structured import structured_match
+from mlir.dialects.transform.structured import (
+    structured_match,
+    ApplyFoldUnitExtentDimsViaSlicesPatternsOp,
+    MatchInterfaceEnum,
+)
 from mlir.dialects.transform.loop import loop_unroll
 from mlir.dialects.transform import SplitHandleOp
 from mlir.ir import (
@@ -43,6 +47,7 @@ from .MlirTarget import MlirTarget
 
 _VECTO_SEQ_NAME = "_vecto"
 _SUPER_VECTORIZE_SEQ_NAME = "_super_vectorize"
+_POST_BUFFERIZE_SEQ_NAME = "_post_bufferize"
 
 
 @dataclass
@@ -105,6 +110,7 @@ class MlirProgramInsertTransformPass:
         concluding_passes: list[str] = [],
         always_vectorize: bool = True,
         vectors_size: int | None = None,
+        using_tensors: bool = False,
     ) -> None:
         self._mlir_program = mlir_program
         self._target = target
@@ -113,9 +119,11 @@ class MlirProgramInsertTransformPass:
         self._concluding_passes = concluding_passes
         self._always_vectorize = always_vectorize
         self._vectors_size = vectors_size
+        self._using_tensors = using_tensors
         self._super_vectorize = self._vectors_size is not None
         self._vecto_sequence: NamedSequenceOp | None = None
         self._super_vectorize_sequence: NamedSequenceOp | None = None
+        self._post_bufferize_sequence: NamedSequenceOp | None = None
         self._named_sequence: NamedSequenceOp | None = None
         self._nodes_schedules = (
             self._mlir_schedule.schedule_impl if self._mlir_schedule is not None else []
@@ -139,6 +147,16 @@ class MlirProgramInsertTransformPass:
                 [],
                 arg_attrs=[{"transform.consumed": UnitAttr.get()}],
             )
+            if self._using_tensors:
+                self._post_bufferize_sequence = NamedSequenceOp(
+                    _POST_BUFFERIZE_SEQ_NAME,
+                    [transform.AnyOpType.get()],
+                    [],
+                    arg_attrs=[{"transform.readonly": UnitAttr.get()}],
+                )
+                assert self._post_bufferize_sequence is not None
+                with InsertionPoint(self._post_bufferize_sequence.body):
+                    transform.YieldOp([])
             if self._super_vectorize:
                 self._super_vectorize_sequence = NamedSequenceOp(
                     _SUPER_VECTORIZE_SEQ_NAME,
@@ -202,7 +220,7 @@ class MlirProgramInsertTransformPass:
                     handle=handle,
                 )
                 if schedule.vectorization or self._always_vectorize:
-                    self._post_vectorize(scheduling_state)
+                    self._post_vectorize(scheduling_state, schedule)
                 handle = scheduling_state.handle
         assert handle, "At least 1 operation should have been processed"
         return handle
@@ -442,6 +460,20 @@ class MlirProgramInsertTransformPass:
     def _vectorize(self, sched_state: SchedulingState):
         if self._vectors_size is not None:
             return
+        assert self._named_sequence is not None
+
+        if self._using_tensors:
+            parent_op = get_parent_op(
+                transform.AnyOpType.get(),
+                sched_state.handle,
+            )
+            with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
+                ApplyFoldUnitExtentDimsViaSlicesPatternsOp()
+            sched_state.handle = structured_match(
+                results_=transform.AnyOpType.get(),
+                target=parent_op,
+                interface=MatchInterfaceEnum.LinalgOp,
+            )
 
         if self._target.has_custom_vectorize():
             self._target.apply_custom_vectorize(sched_state.handle)
@@ -453,10 +485,9 @@ class MlirProgramInsertTransformPass:
                 operands_=[sched_state.handle],
             )
 
-    def _post_vectorize(self, sched_state: SchedulingState):
+    def _post_vectorize(self, sched_state: SchedulingState, schedule: MlirNodeSchedule):
         if self._vectors_size is not None:
             return
-
         parent_op = get_parent_op(
             transform.AnyOpType.get(),
             sched_state.handle,
@@ -465,9 +496,29 @@ class MlirProgramInsertTransformPass:
         with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
             vector.ApplyVectorReductionToContractPatternsOp()
             vector.ApplyTransferPermutationPatternsOp()
-        with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
-            vector.ApplyLowerOuterProductPatternsOp()
-            vector.ApplyLowerContractionPatternsOp()
+
+        # the remaining patterns must be applied post-bufferization to work properly
+        if not self._post_bufferize_sequence:
+            with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
+                vector.ApplyLowerOuterProductPatternsOp()
+                vector.ApplyLowerContractionPatternsOp()
+        else:
+            func_name = self._mlir_program.mlir_module.body.operations[0].attributes[
+                "sym_name"
+            ]
+            with (
+                InsertionPoint.at_block_begin(self._post_bufferize_sequence.body),
+                self._mlir_program.mlir_context,
+                self._loc,
+            ):
+                handle = structured_match(
+                    results_=transform.AnyOpType.get(),
+                    target=self._post_bufferize_sequence.bodyTarget,
+                    op_attrs={"sym_name": func_name},
+                )
+                with InsertionPoint(transform.ApplyPatternsOp(handle).patterns):
+                    vector.ApplyLowerOuterProductPatternsOp()
+                    vector.ApplyLowerContractionPatternsOp()
 
     def _unroll(
         self,
@@ -543,16 +594,24 @@ class MlirProgramApplyTransformPass:
     def __init__(
         self,
         mlir_program: RawMlirProgram,
+        clean_all: bool = False,
+        custom_sequence: None | str = None,
     ) -> None:
         self._mlir_program = mlir_program
+        self._clean_all = clean_all
+        self._custom_sequence = custom_sequence
 
     def run(self) -> None:
         transform_op = [op for op in self._mlir_program.mlir_module.body.operations][-1]
         transform = isinstance(transform_op, NamedSequenceOp)
         assert transform
         pm = PassManager(context=self._mlir_program.mlir_context)
-        for opt in transform_opts:
-            pm.add(opt)  # type: ignore # no attribte add?
+        if self._custom_sequence:
+            for opt in transform_opts:
+                pm.add(f"{opt}{{entry-point={self._custom_sequence}}}")  # type: ignore
+        else:
+            for opt in transform_opts:
+                pm.add(opt)  # type: ignore
         pm.run(self._mlir_program.mlir_module.operation)
 
         while True:
@@ -561,5 +620,40 @@ class MlirProgramApplyTransformPass:
             ][-1]
             if isinstance(transform_op, NamedSequenceOp):
                 transform_op.erase()
-            else:
-                break
+                if self._clean_all:
+                    continue
+            break
+
+
+class MlirProgramApplyPasses:
+    def __init__(
+        self,
+        mlir_program: RawMlirProgram,
+    ) -> None:
+        self._mlir_program = mlir_program
+
+    def run(self, pass_names: list[str]) -> None:
+        ctx = self._mlir_program.mlir_context
+        pm = PassManager(context=ctx)
+        for name in pass_names:
+            pm.add(name)  # type: ignore # no attribute add
+        pm.run(self._mlir_program.mlir_module.operation)
+
+
+def apply_bufferization_passes(mlir_program: RawMlirProgram):
+    apply_passes = MlirProgramApplyPasses(mlir_program)
+    bufferize_options = [
+        "bufferize-function-boundaries",
+        "function-boundary-type-conversion=identity-layout-map",
+        "buffer-alignment=256",
+    ]
+    apply_passes.run(
+        [
+            "canonicalize",
+            "cse",
+            "eliminate-empty-tensors",  # causes ops to write directly to out buffer
+            f"one-shot-bufferize{{{' '.join(bufferize_options)}}}",
+            "drop-equivalent-buffer-results",
+            "func.func(promote-buffers-to-stack)",
+        ]
+    )
