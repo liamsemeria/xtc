@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 The XTC Project Authors
 #
-from xtc.itf.schd.scheduler import DEFAULT_ROOT
+from .MlirLoopNames import parent_name
 from dataclasses import dataclass
 from mlir.dialects import transform
 from mlir.dialects.transform import (
@@ -655,20 +655,20 @@ class MlirProgramInsertTransformPass:
                 prods = find_producer_handles(
                     self._mlir_program.mlir_module, schedule.node_ident
                 )
+                fuse_root = parent_name(schedule.fused[0][0])
                 unscheduled_handles.update(set(prods))
-                op_axes = {idx: f"./{ax}" for ax, idx in schedule.fused}
-                prev_fused_idx = -1
+                op_axes = {idx: ax for ax, idx in schedule.fused}
+
                 fuse_destinations = {}
-                for idx, name in enumerate(prods):
-                    if not name:
+                for idx, prod_handle in enumerate(prods):
+                    if not prod_handle:
                         continue
                     if idx in op_axes:
-                        fuse_destinations[name] = op_axes[idx]
-                        prev_fused_idx = idx
-                # get outer dims to fuse, assumes split and fuse are incompatible
+                        fuse_destinations[prod_handle] = op_axes[idx]
+                # get outer dims to fuse, assumes fuse no splitting avove loop dim
                 dim_fuse_handles: dict[str, list[str]] = {}
                 for fuse_handle, fuse_dest in fuse_destinations.items():
-                    for dim in schedule.permutation[DEFAULT_ROOT]:
+                    for dim in schedule.permutation[fuse_root]:
                         dim_fuse_handles.setdefault(dim, []).append(fuse_handle)
                         if dim == fuse_dest:
                             break

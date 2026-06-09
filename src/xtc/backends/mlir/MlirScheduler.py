@@ -172,9 +172,7 @@ class MlirScheduler(itf.schd.Scheduler):
     def fuse_producer_at(
         self, axis: str, input_idx: int, root: str = DEFAULT_ROOT
     ) -> None:
-        # TODO: not implemented for now
         self._current_scheduler.fuse_producer_at(axis, input_idx, root=root)
-        pass
 
     @override
     def define_memory_mesh(self, axes: dict[str, int]) -> None:

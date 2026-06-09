@@ -98,6 +98,11 @@ class MlirNodeScheduler:
         if not self.permutation:
             self.permutation[DEFAULT_ROOT] = self.get_default_interchange(DEFAULT_ROOT)
 
+        for fuse_axis in self.fused:
+            assert fuse_axis[0] in self.permutation[next(iter(self.permutation))], (
+                "Fusion must be to an axis in the base root not the result of a split."
+            )
+
         return MlirNodeSchedule(
             node_name=self.node_name,
             node_ident=self.node_ident,
@@ -224,4 +229,4 @@ class MlirNodeScheduler:
     def fuse_producer_at(
         self, axis: str, input_idx: int, root: str = DEFAULT_ROOT
     ) -> None:
-        self.fused.append((axis, input_idx))
+        self.fused.append((make_loop_name(root, axis), input_idx))
