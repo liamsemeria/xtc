@@ -21,7 +21,6 @@ from xtc.backends.mlir.MlirCompilerPasses import (
     MlirProgramInsertTransformPass,
     MlirProgramApplyTransformPass,
     apply_bufferization_passes,
-    _POST_BUFFERIZE_SEQ_NAME,
 )
 
 from xtc.backends.mlir.MlirTarget import (
@@ -130,12 +129,6 @@ class MlirProgramCompiler:
         self.dump_file = kwargs.get("dump_file")
         # Register required Mlir extensions by the schedule
         self._register_mlir_extensions()
-        # check to see if tensors are used, will be removed in later patch
-        # used for now in order to not update all memref tests
-        func_type_str = str(
-            mlir_program.mlir_module.body.operations[0].attributes["function_type"]
-        )
-        self.using_tensors = "tensor" in func_type_str
 
     def dump_ir(self, title: str):
         print(f"// -----// {title} //----- //", file=sys.stderr)
@@ -149,7 +142,6 @@ class MlirProgramCompiler:
             always_vectorize=self._config.always_vectorize,
             vectors_size=self._config.vectors_size,
             target=self._target,
-            using_tensors=self.using_tensors,
         )
         insert_transform_pass.run()
         if self._config.print_source_ir:
@@ -158,7 +150,6 @@ class MlirProgramCompiler:
     def mlir_apply_transform_pass(self) -> None:
         apply_transform_pass = MlirProgramApplyTransformPass(
             mlir_program=self._mlir_program,
-            clean_all=not self.using_tensors,
         )
         apply_transform_pass.run()
         if self._config.print_transformed_ir:
@@ -167,14 +158,6 @@ class MlirProgramCompiler:
     def mlir_apply_tensor_lowering_pass(self) -> None:
         assert self._config.mlir_install_dir
         apply_bufferization_passes(self._mlir_program, self._config.mlir_install_dir)
-        # apply the post-bufferization transform sequence
-        if self.using_tensors:
-            apply_transform_pass = MlirProgramApplyTransformPass(
-                mlir_program=self._mlir_program,
-                clean_all=True,
-                custom_sequence=_POST_BUFFERIZE_SEQ_NAME,
-            )
-            apply_transform_pass.run()
         if self._config.print_bufferization_ir:
             self.dump_ir("IR Dump After Tensor Lowering")
 
