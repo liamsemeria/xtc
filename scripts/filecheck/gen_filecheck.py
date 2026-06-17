@@ -8,7 +8,14 @@ import sys
 INDENT = 7
 
 
-def process_file(file_path: str, in_place: bool, regexp: bool, diff: bool):
+def process_file(
+    file_path: str,
+    in_place: bool,
+    regexp: bool,
+    diff: bool,
+    quiet: bool = False,
+    check_exit: bool = False,
+) -> bool:
     with open(file_path, "r") as file:
         lines = file.readlines()
 
@@ -16,8 +23,9 @@ def process_file(file_path: str, in_place: bool, regexp: bool, diff: bool):
     re_prefix = r"^([^ ]+) +RUN:"
     m = re.match(re_prefix, lines[0])
     if not m:
-        print(f"Error: The first line of the file does not start with '... RUN:'")
-        return
+        if not quiet:
+            print(f"Error: The first line of the file does not start with '... RUN:'")
+        return False
 
     # prefix contains the comment prefix
     prefix = m.group(1)
@@ -31,6 +39,14 @@ def process_file(file_path: str, in_place: bool, regexp: bool, diff: bool):
 
     # Execute the command
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
+
+    if check_exit and result.returncode != 0:
+        print(
+            f"Error: command failed (exit {result.returncode}) for: {file_path}",
+            file=sys.stderr,
+        )
+        return False
+
     output = result.stdout + result.stderr
 
     # Remove trailing newline if present
@@ -71,6 +87,7 @@ def process_file(file_path: str, in_place: bool, regexp: bool, diff: bool):
             os.rename(tmp_file, file_path)
     else:
         print(processed_output)
+    return True
 
 
 if __name__ == "__main__":
@@ -78,9 +95,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description="Generate Filecheck directives.",
-        epilog='Apply to all MLIR files in <dir>: for file in <dir>/*.mlir; do python3 gen_filecheck.py "$file" -i; done',
+        epilog="Apply to a directory: python3 gen_filecheck.py <dir> -i",
     )
-    parser.add_argument("src", type=str, help="Source file.")
+    parser.add_argument("src", type=str, help="Source file or directory.")
     parser.add_argument(
         "-i",
         "--in-place",
@@ -96,6 +113,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d", "--diff", action="store_true", help="Output diff instead of generating."
     )
+    parser.add_argument(
+        "-e",
+        "--check-exit",
+        action="store_true",
+        help="Abort if the RUN command exits with a non-zero status.",
+    )
     args = parser.parse_args()
 
-    process_file(args.src, args.in_place, args.regexp, args.diff)
+    if os.path.isdir(args.src):
+        for name in sorted(os.listdir(args.src)):
+            fpath = os.path.join(args.src, name)
+            if os.path.isfile(fpath):
+                process_file(
+                    fpath,
+                    args.in_place,
+                    args.regexp,
+                    args.diff,
+                    quiet=True,
+                    check_exit=args.check_exit,
+                )
+    else:
+        process_file(
+            args.src, args.in_place, args.regexp, args.diff, check_exit=args.check_exit
+        )
