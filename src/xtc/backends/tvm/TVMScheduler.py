@@ -468,6 +468,13 @@ class TVMScheduler(itf.schd.Scheduler):
         self.fused.append((axis, input_idx))
 
     @override
+    def fuse_consumer_at(
+        self, axis: str, consumer_name: str, root: str = DEFAULT_ROOT
+    ) -> None:
+        # TODO: not implemented for now
+        pass
+
+    @override
     def define_memory_mesh(self, axes: dict[str, int]) -> None:
         # TODO: not implemented for now
         pass
