@@ -31,7 +31,8 @@ class MlirNodeSchedule:
     processor_mesh: dict[str, int]
     distribution: dict[str, str]
     distributed_buffers: dict[str, dict]
-    fused: list[tuple[str, int]]
+    fused_producers: list[tuple[str, int]]
+    fused_consumers: list[tuple[str, str]]
 
     def index_of_dim(self, dim: str) -> int:
         return list(self.dims).index(dim)
@@ -92,13 +93,14 @@ class MlirNodeScheduler:
         self.processor_mesh: dict[str, int] = {}
         self.distribution: dict[str, str] = {}
         self.distributed_buffers: dict[str, dict] = {}
-        self.fused: list[tuple[str, int]] = []
+        self.fused_producers: list[tuple[str, int]] = []
+        self.fused_consumers: list[tuple[str, str]] = []
 
     def mlir_node_schedule(self) -> MlirNodeSchedule:
         if not self.permutation:
             self.permutation[DEFAULT_ROOT] = self.get_default_interchange(DEFAULT_ROOT)
 
-        for fuse_axis in self.fused:
+        for fuse_axis in self.fused_producers:
             assert fuse_axis[0] in self.permutation[next(iter(self.permutation))], (
                 "Fusion must be to an axis in the base root not the result of a split."
             )
@@ -119,7 +121,8 @@ class MlirNodeScheduler:
             processor_mesh=self.processor_mesh,
             distribution=self.distribution,
             distributed_buffers=self.distributed_buffers,
-            fused=self.fused,
+            fused_producers=self.fused_producers,
+            fused_consumers=self.fused_consumers,
         )
 
     @override
@@ -229,4 +232,9 @@ class MlirNodeScheduler:
     def fuse_producer_at(
         self, axis: str, input_idx: int, root: str = DEFAULT_ROOT
     ) -> None:
-        self.fused.append((make_loop_name(root, axis), input_idx))
+        self.fused_producers.append((make_loop_name(root, axis), input_idx))
+
+    def fuse_consumer_at(
+        self, axis: str, consumer_name: str, root: str = DEFAULT_ROOT
+    ) -> None:
+        self.fused_consumers.append((make_loop_name(root, axis), consumer_name))
