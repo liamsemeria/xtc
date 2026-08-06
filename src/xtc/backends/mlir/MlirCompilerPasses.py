@@ -389,10 +389,14 @@ class MlirProgramInsertTransformPass:
         unscheduled_handles: set[str | None],
     ):
         assert self._named_sequence is not None
-        fuse_root = parent_name(schedule.fused_consumers[0][0])
-        for fuse_axis, op_name in schedule.fused_consumers:
+
+        fuse_root = parent_name(schedule.fused_consumers[0])
+        for fuse_axis in schedule.fused_consumers:
             # derive handle of consumer
-            consumer_id = f"__xtc_id_{op_name}_"
+            consumer_handles = find_consumer_handles(
+                self._mlir_program.mlir_module, schedule.node_ident
+            )
+            consumer_id = consumer_handles[0]
             unscheduled_handles.add(consumer_id)
             # fuse consumer into all loops until the fuse_axis
             fuse_loops = []
@@ -714,6 +718,29 @@ class MlirProgramInsertTransformPass:
                 fused_producer_handles[schedule.node_ident] = dim_fuse_handles
 
         return fused_producer_handles
+
+
+def find_consumer_handles(module: Module, root_handle: str) -> list[str | None]:
+    # returns the handles for each consumer op of the operation specified by root_handle
+    consumer_handles: list[str | None] = []
+    root_op = None
+    for func_op in module.body.operations:
+        for op in func_op.regions[0].blocks[0].operations:
+            if root_handle in op.attributes:
+                root_op = op
+                break
+        if root_op:
+            break
+
+    if not root_op:
+        return consumer_handles
+
+    for use in root_op.results[0].uses:
+        consumer_op = use.owner
+        for attr in consumer_op.attributes:
+            if attr.startswith("__xtc_id_"):
+                consumer_handles.append(attr)
+    return consumer_handles
 
 
 def find_producer_handles(module: Module, root_handle: str) -> list[str | None]:

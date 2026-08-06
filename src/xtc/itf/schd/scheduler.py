@@ -233,19 +233,14 @@ class Scheduler(ABC):
         ...
 
     @abstractmethod
-    def fuse_consumer_at(
-        self, axis: str, consumer_name: str, root: str = DEFAULT_ROOT
-    ) -> None:
-        """Fuse consumer computation at the given producer location.
+    def fuse_consumer_at(self, axis: str, root: str = DEFAULT_ROOT) -> None:
+        """Fuse the consumer computation at the given producer location.
 
-        Given the name of a direct consumer of the operation,
-        Fuse the computation at the given scheduled consumer axis.
-        The necessary output slices and computations will be inserted
-        for computing the output tile at the given axis location.
+        The consumer of output zero is fused at the given scheduled producer
+        axis. Other outputs are not currently supported.
 
         Args:
             axis: localisation of the fusion in the producer
-            consumer_name: the name of the consumer operation to be fused
             root: the parent split (or the operator's absolute root)
         """
         ...

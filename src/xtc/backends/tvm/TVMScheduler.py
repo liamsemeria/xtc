@@ -468,9 +468,7 @@ class TVMScheduler(itf.schd.Scheduler):
         self.fused.append((axis, input_idx))
 
     @override
-    def fuse_consumer_at(
-        self, axis: str, consumer_name: str, root: str = DEFAULT_ROOT
-    ) -> None:
+    def fuse_consumer_at(self, axis: str, root: str = DEFAULT_ROOT) -> None:
         # TODO: not implemented for now
         pass
 

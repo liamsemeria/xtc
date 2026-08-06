@@ -319,9 +319,7 @@ class JIRScheduler(itf.schd.Scheduler):
         pass
 
     @override
-    def fuse_consumer_at(
-        self, axis: str, consumer_name: str, root: str = DEFAULT_ROOT
-    ) -> None:
+    def fuse_consumer_at(self, axis: str, root: str = DEFAULT_ROOT) -> None:
         # TODO: not implemented for now
         pass
 

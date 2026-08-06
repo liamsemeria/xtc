@@ -18,7 +18,7 @@ print(graph)
 impl = Backend(graph, use_tensor_dialect=True)
 
 sch = impl.get_scheduler(default_node="O")
-sch.fuse_consumer_at("f","relu")
+sch.fuse_consumer_at("f")
 sched = sch.schedule()
 
 comp = impl.get_compiler(

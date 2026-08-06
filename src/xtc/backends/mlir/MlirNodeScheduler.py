@@ -32,7 +32,7 @@ class MlirNodeSchedule:
     distribution: dict[str, str]
     distributed_buffers: dict[str, dict]
     fused_producers: list[tuple[str, int]]
-    fused_consumers: list[tuple[str, str]]
+    fused_consumers: list[str]
 
     def index_of_dim(self, dim: str) -> int:
         return list(self.dims).index(dim)
@@ -94,7 +94,7 @@ class MlirNodeScheduler:
         self.distribution: dict[str, str] = {}
         self.distributed_buffers: dict[str, dict] = {}
         self.fused_producers: list[tuple[str, int]] = []
-        self.fused_consumers: list[tuple[str, str]] = []
+        self.fused_consumers: list[str] = []
 
     def mlir_node_schedule(self) -> MlirNodeSchedule:
         if not self.permutation:
@@ -234,7 +234,5 @@ class MlirNodeScheduler:
     ) -> None:
         self.fused_producers.append((make_loop_name(root, axis), input_idx))
 
-    def fuse_consumer_at(
-        self, axis: str, consumer_name: str, root: str = DEFAULT_ROOT
-    ) -> None:
-        self.fused_consumers.append((make_loop_name(root, axis), consumer_name))
+    def fuse_consumer_at(self, axis: str, root: str = DEFAULT_ROOT) -> None:
+        self.fused_consumers.append(make_loop_name(root, axis))
