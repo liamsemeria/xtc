@@ -74,12 +74,12 @@ print(f"CODE: {res}")
 # CHECK-NEXT:                  with T.init():
 # CHECK-NEXT:                      matmul[v_i, v_j] = T.float32(0.0)
 # CHECK-NEXT:                  matmul[v_i, v_j] = matmul[v_i, v_j] + _0[v_i, v_k] * _1[v_k, v_j]
-# CHECK-NEXT:          for i0, i1 in T.grid(4, 32):
+# CHECK-NEXT:          for i, j in T.grid(4, 32):
 # CHECK-NEXT:              with T.sblock("relu"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(matmul[v_i0, v_i1])
-# CHECK-NEXT:                  T.writes(relu[v_i0, v_i1])
-# CHECK-NEXT:                  relu[v_i0, v_i1] = T.max(T.float32(0.0), matmul[v_i0, v_i1])
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(matmul[v_i, v_j])
+# CHECK-NEXT:                  T.writes(relu[v_i, v_j])
+# CHECK-NEXT:                  relu[v_i, v_j] = T.max(T.float32(0.0), matmul[v_i, v_j])
 # CHECK-NEXT:  O = sch.get_sblock("matmul")
 # CHECK-NEXT:  i, j, k, = sch.get_loops(O)
 # CHECK-NEXT:  O_F0 = sch.get_consumers(O)[0]
@@ -116,9 +116,9 @@ print(f"CODE: {res}")
 # CHECK-NEXT:                      T.writes(matmul[v_i, v_j])
 # CHECK-NEXT:                      matmul[v_i, v_j] = matmul[v_i, v_j] + _0[v_i, v_k] * _1[v_k, v_j]
 # CHECK-NEXT:              with T.sblock("relu"):
-# CHECK-NEXT:                  v_i0 = T.axis.spatial(4, i_0 * 2 + i_1)
-# CHECK-NEXT:                  v_i1 = T.axis.spatial(32, j_0 * 16 + j_1)
-# CHECK-NEXT:                  T.reads(matmul[v_i0, v_i1])
-# CHECK-NEXT:                  T.writes(relu[v_i0, v_i1])
-# CHECK-NEXT:                  relu[v_i0, v_i1] = T.max(T.float32(0.0), matmul[v_i0, v_i1])
+# CHECK-NEXT:                  v_i = T.axis.spatial(4, i_0 * 2 + i_1)
+# CHECK-NEXT:                  v_j = T.axis.spatial(32, j_0 * 16 + j_1)
+# CHECK-NEXT:                  T.reads(matmul[v_i, v_j])
+# CHECK-NEXT:                  T.writes(relu[v_i, v_j])
+# CHECK-NEXT:                  relu[v_i, v_j] = T.max(T.float32(0.0), matmul[v_i, v_j])
 # CHECK-NEXT:  CODE: 0

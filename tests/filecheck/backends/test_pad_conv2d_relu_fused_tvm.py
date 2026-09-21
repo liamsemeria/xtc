@@ -60,12 +60,12 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          # with T.sblock("root"):
 # CHECK-NEXT:          pad = T.sblock_alloc_buffer((1, 12, 12, 3))
 # CHECK-NEXT:          conv = T.sblock_alloc_buffer((1, 4, 4, 16))
-# CHECK-NEXT:          for i0, i1, i2, i3 in T.grid(1, 12, 12, 3):
+# CHECK-NEXT:          for b, h, w, c in T.grid(1, 12, 12, 3):
 # CHECK-NEXT:              with T.sblock("pad"):
-# CHECK-NEXT:                  v_i0, v_i1, v_i2, v_i3 = T.axis.remap("SSSS", [i0, i1, i2, i3])
-# CHECK-NEXT:                  T.reads(_0[v_i0, v_i1 - 2, v_i2 - 2, v_i3])
-# CHECK-NEXT:                  T.writes(pad[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                  pad[v_i0, v_i1, v_i2, v_i3] = T.if_then_else(2 <= v_i1 and v_i1 < 10 and 2 <= v_i2 and v_i2 < 10, _0[v_i0, v_i1 - 2, v_i2 - 2, v_i3], T.float32(0.0))
+# CHECK-NEXT:                  v_b, v_h, v_w, v_c = T.axis.remap("SSSS", [b, h, w, c])
+# CHECK-NEXT:                  T.reads(_0[v_b, v_h - 2, v_w - 2, v_c])
+# CHECK-NEXT:                  T.writes(pad[v_b, v_h, v_w, v_c])
+# CHECK-NEXT:                  pad[v_b, v_h, v_w, v_c] = T.if_then_else(2 <= v_h and v_h < 10 and 2 <= v_w and v_w < 10, _0[v_b, v_h - 2, v_w - 2, v_c], T.float32(0.0))
 # CHECK-NEXT:          for b, h, w, f, r, s, c in T.grid(1, 4, 4, 16, 5, 5, 3):
 # CHECK-NEXT:              with T.sblock("conv"):
 # CHECK-NEXT:                  v_b, v_h, v_w, v_f, v_r, v_s, v_c = T.axis.remap("SSSSRRR", [b, h, w, f, r, s, c])
@@ -74,12 +74,12 @@ print(f"CODE: {res}")
 # CHECK-NEXT:                  with T.init():
 # CHECK-NEXT:                      conv[v_b, v_h, v_w, v_f] = T.float32(0.0)
 # CHECK-NEXT:                  conv[v_b, v_h, v_w, v_f] = conv[v_b, v_h, v_w, v_f] + pad[v_b, v_h * 2 + v_r, v_w * 2 + v_s, v_c] * _1[v_r, v_s, v_c, v_f]
-# CHECK-NEXT:          for i0, i1, i2, i3 in T.grid(1, 4, 4, 16):
+# CHECK-NEXT:          for i, j, k, l in T.grid(1, 4, 4, 16):
 # CHECK-NEXT:              with T.sblock("relu"):
-# CHECK-NEXT:                  v_i0, v_i1, v_i2, v_i3 = T.axis.remap("SSSS", [i0, i1, i2, i3])
-# CHECK-NEXT:                  T.reads(conv[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                  T.writes(relu[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                  relu[v_i0, v_i1, v_i2, v_i3] = T.max(T.float32(0.0), conv[v_i0, v_i1, v_i2, v_i3])
+# CHECK-NEXT:                  v_i, v_j, v_k, v_l = T.axis.remap("SSSS", [i, j, k, l])
+# CHECK-NEXT:                  T.reads(conv[v_i, v_j, v_k, v_l])
+# CHECK-NEXT:                  T.writes(relu[v_i, v_j, v_k, v_l])
+# CHECK-NEXT:                  relu[v_i, v_j, v_k, v_l] = T.max(T.float32(0.0), conv[v_i, v_j, v_k, v_l])
 # CHECK-NEXT:  O = sch.get_sblock("conv")
 # CHECK-NEXT:  b, h, w, f, r, s, c, = sch.get_loops(O)
 # CHECK-NEXT:  O_F0 = sch.get_consumers(O)[0]
@@ -112,13 +112,13 @@ print(f"CODE: {res}")
 # CHECK-NEXT:              for r in range(5):
 # CHECK-NEXT:                  for ax0, ax1 in T.grid(5, 3):
 # CHECK-NEXT:                      with T.sblock("pad"):
-# CHECK-NEXT:                          v_i0 = T.axis.spatial(1, 0)
-# CHECK-NEXT:                          v_i1 = T.axis.spatial(12, h * 2 + r)
-# CHECK-NEXT:                          v_i2 = T.axis.spatial(12, w * 2 + ax0)
-# CHECK-NEXT:                          v_i3 = T.axis.spatial(3, ax1)
-# CHECK-NEXT:                          T.reads(_0[v_i0, v_i1 - 2, v_i2 - 2, v_i3])
-# CHECK-NEXT:                          T.writes(pad[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                          pad[v_i0, v_i1, v_i2, v_i3] = T.if_then_else(2 <= v_i1 and v_i1 < 10 and 2 <= v_i2 and v_i2 < 10, _0[v_i0, v_i1 - 2, v_i2 - 2, v_i3], T.float32(0.0))
+# CHECK-NEXT:                          v_b = T.axis.spatial(1, 0)
+# CHECK-NEXT:                          v_h = T.axis.spatial(12, h * 2 + r)
+# CHECK-NEXT:                          v_w = T.axis.spatial(12, w * 2 + ax0)
+# CHECK-NEXT:                          v_c = T.axis.spatial(3, ax1)
+# CHECK-NEXT:                          T.reads(_0[v_b, v_h - 2, v_w - 2, v_c])
+# CHECK-NEXT:                          T.writes(pad[v_b, v_h, v_w, v_c])
+# CHECK-NEXT:                          pad[v_b, v_h, v_w, v_c] = T.if_then_else(2 <= v_h and v_h < 10 and 2 <= v_w and v_w < 10, _0[v_b, v_h - 2, v_w - 2, v_c], T.float32(0.0))
 # CHECK-NEXT:                  for s, c in T.grid(5, 3):
 # CHECK-NEXT:                      for f in T.vectorized(16):
 # CHECK-NEXT:                          with T.sblock("conv_update"):
@@ -128,9 +128,9 @@ print(f"CODE: {res}")
 # CHECK-NEXT:                              conv[v_b, v_h, v_w, v_f] = conv[v_b, v_h, v_w, v_f] + pad[v_b, v_h * 2 + v_r, v_w * 2 + v_s, v_c] * _1[v_r, v_s, v_c, v_f]
 # CHECK-NEXT:              for ax0 in range(16):
 # CHECK-NEXT:                  with T.sblock("relu"):
-# CHECK-NEXT:                      v_i0 = T.axis.spatial(1, 0)
-# CHECK-NEXT:                      v_i1, v_i2, v_i3 = T.axis.remap("SSS", [h, w, ax0])
-# CHECK-NEXT:                      T.reads(conv[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                      T.writes(relu[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                      relu[v_i0, v_i1, v_i2, v_i3] = T.max(T.float32(0.0), conv[v_i0, v_i1, v_i2, v_i3])
+# CHECK-NEXT:                      v_i = T.axis.spatial(1, 0)
+# CHECK-NEXT:                      v_j, v_k, v_l = T.axis.remap("SSS", [h, w, ax0])
+# CHECK-NEXT:                      T.reads(conv[v_i, v_j, v_k, v_l])
+# CHECK-NEXT:                      T.writes(relu[v_i, v_j, v_k, v_l])
+# CHECK-NEXT:                      relu[v_i, v_j, v_k, v_l] = T.max(T.float32(0.0), conv[v_i, v_j, v_k, v_l])
 # CHECK-NEXT:  CODE: 0

@@ -63,12 +63,12 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          T.func_attr({"tirx.noalias": True})
 # CHECK-NEXT:          # with T.sblock("root"):
 # CHECK-NEXT:          relu = T.sblock_alloc_buffer((64, 64))
-# CHECK-NEXT:          for i0, i1 in T.grid(64, 64):
+# CHECK-NEXT:          for i, j in T.grid(64, 64):
 # CHECK-NEXT:              with T.sblock("relu"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(_0[v_i0, v_i1])
-# CHECK-NEXT:                  T.writes(relu[v_i0, v_i1])
-# CHECK-NEXT:                  relu[v_i0, v_i1] = T.max(T.float32(0.0), _0[v_i0, v_i1])
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(_0[v_i, v_j])
+# CHECK-NEXT:                  T.writes(relu[v_i, v_j])
+# CHECK-NEXT:                  relu[v_i, v_j] = T.max(T.float32(0.0), _0[v_i, v_j])
 # CHECK-NEXT:          for i, j, k in T.grid(64, 64, 64):
 # CHECK-NEXT:              with T.sblock("C"):
 # CHECK-NEXT:                  v_i, v_j, v_k = T.axis.remap("SSR", [i, j, k])
@@ -120,11 +120,11 @@ print(f"CODE: {res}")
 # CHECK-NEXT:                      _1_global[v0, v1] = _1[v0, v1]
 # CHECK-NEXT:              for ax0, ax1 in T.grid(8, 64):
 # CHECK-NEXT:                  with T.sblock("relu"):
-# CHECK-NEXT:                      v_i0 = T.axis.spatial(64, i_0_j_0_fused // 2 * 8 + ax0)
-# CHECK-NEXT:                      v_i1 = T.axis.spatial(64, ax1)
-# CHECK-NEXT:                      T.reads(_0[v_i0, v_i1])
-# CHECK-NEXT:                      T.writes(relu[v_i0, v_i1])
-# CHECK-NEXT:                      relu[v_i0, v_i1] = T.max(T.float32(0.0), _0[v_i0, v_i1])
+# CHECK-NEXT:                      v_i = T.axis.spatial(64, i_0_j_0_fused // 2 * 8 + ax0)
+# CHECK-NEXT:                      v_j = T.axis.spatial(64, ax1)
+# CHECK-NEXT:                      T.reads(_0[v_i, v_j])
+# CHECK-NEXT:                      T.writes(relu[v_i, v_j])
+# CHECK-NEXT:                      relu[v_i, v_j] = T.max(T.float32(0.0), _0[v_i, v_j])
 # CHECK-NEXT:              for i_1_init, j_1_init in T.grid(2, 2):
 # CHECK-NEXT:                  for i_2_init in T.unroll(4):
 # CHECK-NEXT:                      for j_2_init in T.vectorized(16):
