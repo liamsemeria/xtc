@@ -670,10 +670,26 @@ class MlirProgramInsertTransformPass:
                 dim_name in schedule.unrolling
                 and dim_name not in schedule.vectorization
             ):
-                assert self._named_sequence is not None
-                loop_unroll(
-                    sched_state.all_loops[dim_name], schedule.unrolling[dim_name]
-                )
+                # if the tensor dialect is being used, unroll after bufferization
+                if not self._post_bufferize_sequence:
+                    assert self._named_sequence is not None
+                    loop_unroll(
+                        sched_state.all_loops[dim_name], schedule.unrolling[dim_name]
+                    )
+                else:
+                    with (
+                        InsertionPoint.at_block_begin(
+                            self._post_bufferize_sequence.body
+                        ),
+                        self._mlir_program.mlir_context,
+                        self._loc,
+                    ):
+                        handle = structured_match(
+                            results_=transform.AnyOpType.get(),
+                            target=self._post_bufferize_sequence.bodyTarget,
+                            op_attrs={dim_name: UnitAttr.get()},
+                        )
+                        loop_unroll(handle, schedule.unrolling[dim_name])
 
     def _distribute_loop(
         self,
