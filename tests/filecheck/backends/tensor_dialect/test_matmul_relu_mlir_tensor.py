@@ -66,6 +66,8 @@ print(f"CODE: {res}")
 # CHECK-NEXT:        transform.apply_patterns.vector.lower_outerproduct
 # CHECK-NEXT:        transform.apply_patterns.vector.lower_contraction
 # CHECK-NEXT:      } : !transform.any_op
+# CHECK-NEXT:      %1 = transform.structured.match attributes {"./i1"} in %arg0 : (!transform.any_op) -> !transform.any_op
+# CHECK-NEXT:      transform.loop.unroll %1 {factor = 2 : i64} : !transform.any_op
 # CHECK-NEXT:      transform.yield 
 # CHECK-NEXT:    }
 # CHECK-NEXT:    transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
@@ -89,7 +91,6 @@ print(f"CODE: {res}")
 # CHECK-NEXT:      } : !transform.any_op
 # CHECK-NEXT:      %3 = transform.structured.match interface{LinalgOp} in %2 : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      transform.include @_vecto failures(suppress) (%3) : (!transform.any_op) -> ()
-# CHECK-NEXT:      transform.loop.unroll %loops_9 {factor = 2 : i64} : !transform.any_op
 # CHECK-NEXT:      %4 = transform.get_parent_op %loops_3 {isolated_from_above} : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      transform.apply_patterns to %4 {
 # CHECK-NEXT:        transform.apply_patterns.vector.reduction_to_contract
@@ -140,24 +141,19 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          %7 = scf.for %arg7 = %c0 to %c32 step %c16 iter_args(%arg8 = %extracted_slice_5) -> (tensor<2x32xf32>) {
 # CHECK-NEXT:            %extracted_slice_6 = tensor.extract_slice %extracted_slice_3[0, %arg7] [1, 16] [1, 1] : tensor<1x32xf32> to tensor<1x16xf32>
 # CHECK-NEXT:            %extracted_slice_7 = tensor.extract_slice %arg8[0, %arg7] [2, 16] [1, 1] : tensor<2x32xf32> to tensor<2x16xf32>
-# CHECK-NEXT:            %extracted_slice_8 = tensor.extract_slice %extracted_slice_4[%c0, 0] [1, 1] [1, 1] : tensor<2x1xf32> to tensor<1x1xf32>
-# CHECK-NEXT:            %extracted_slice_9 = tensor.extract_slice %extracted_slice_7[%c0, 0] [1, 16] [1, 1] : tensor<2x16xf32> to tensor<1x16xf32>
-# CHECK-NEXT:            %8 = vector.transfer_read %extracted_slice_8[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x1xf32>, vector<1x1xf32>
-# CHECK-NEXT:            %9 = vector.transfer_read %extracted_slice_6[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x16xf32>, vector<1x16xf32>
-# CHECK-NEXT:            %10 = vector.transfer_read %extracted_slice_9[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x16xf32>, vector<1x16xf32>
-# CHECK-NEXT:            %11 = vector.contract {indexing_maps = [#map, #map1, #map2], iterator_types = ["parallel", "parallel", "reduction"], kind = #vector.kind<add>} %8, %9, %10 : vector<1x1xf32>, vector<1x16xf32> into vector<1x16xf32>
-# CHECK-NEXT:            %12 = vector.transfer_write %11, %extracted_slice_9[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, tensor<1x16xf32>
-# CHECK-NEXT:            %inserted_slice_10 = tensor.insert_slice %12 into %extracted_slice_7[%c0, 0] [1, 16] [1, 1] : tensor<1x16xf32> into tensor<2x16xf32>
-# CHECK-NEXT:            %extracted_slice_11 = tensor.extract_slice %extracted_slice_4[%c1, 0] [1, 1] [1, 1] : tensor<2x1xf32> to tensor<1x1xf32>
-# CHECK-NEXT:            %extracted_slice_12 = tensor.extract_slice %inserted_slice_10[%c1, 0] [1, 16] [1, 1] : tensor<2x16xf32> to tensor<1x16xf32>
-# CHECK-NEXT:            %13 = vector.transfer_read %extracted_slice_11[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x1xf32>, vector<1x1xf32>
-# CHECK-NEXT:            %14 = vector.transfer_read %extracted_slice_6[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x16xf32>, vector<1x16xf32>
-# CHECK-NEXT:            %15 = vector.transfer_read %extracted_slice_12[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x16xf32>, vector<1x16xf32>
-# CHECK-NEXT:            %16 = vector.contract {indexing_maps = [#map, #map1, #map2], iterator_types = ["parallel", "parallel", "reduction"], kind = #vector.kind<add>} %13, %14, %15 : vector<1x1xf32>, vector<1x16xf32> into vector<1x16xf32>
-# CHECK-NEXT:            %17 = vector.transfer_write %16, %extracted_slice_12[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, tensor<1x16xf32>
-# CHECK-NEXT:            %inserted_slice_13 = tensor.insert_slice %17 into %inserted_slice_10[%c1, 0] [1, 16] [1, 1] : tensor<1x16xf32> into tensor<2x16xf32>
-# CHECK-NEXT:            %inserted_slice_14 = tensor.insert_slice %inserted_slice_13 into %arg8[0, %arg7] [2, 16] [1, 1] : tensor<2x16xf32> into tensor<2x32xf32>
-# CHECK-NEXT:            scf.yield %inserted_slice_14 : tensor<2x32xf32>
+# CHECK-NEXT:            %8 = scf.for %arg9 = %c0 to %c2 step %c1 iter_args(%arg10 = %extracted_slice_7) -> (tensor<2x16xf32>) {
+# CHECK-NEXT:              %extracted_slice_9 = tensor.extract_slice %extracted_slice_4[%arg9, 0] [1, 1] [1, 1] : tensor<2x1xf32> to tensor<1x1xf32>
+# CHECK-NEXT:              %extracted_slice_10 = tensor.extract_slice %arg10[%arg9, 0] [1, 16] [1, 1] : tensor<2x16xf32> to tensor<1x16xf32>
+# CHECK-NEXT:              %9 = vector.transfer_read %extracted_slice_9[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x1xf32>, vector<1x1xf32>
+# CHECK-NEXT:              %10 = vector.transfer_read %extracted_slice_6[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x16xf32>, vector<1x16xf32>
+# CHECK-NEXT:              %11 = vector.transfer_read %extracted_slice_10[%c0, %c0], %0 {in_bounds = [true, true]} : tensor<1x16xf32>, vector<1x16xf32>
+# CHECK-NEXT:              %12 = vector.contract {indexing_maps = [#map, #map1, #map2], iterator_types = ["parallel", "parallel", "reduction"], kind = #vector.kind<add>} %9, %10, %11 : vector<1x1xf32>, vector<1x16xf32> into vector<1x16xf32>
+# CHECK-NEXT:              %13 = vector.transfer_write %12, %extracted_slice_10[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, tensor<1x16xf32>
+# CHECK-NEXT:              %inserted_slice_11 = tensor.insert_slice %13 into %arg10[%arg9, 0] [1, 16] [1, 1] : tensor<1x16xf32> into tensor<2x16xf32>
+# CHECK-NEXT:              scf.yield %inserted_slice_11 : tensor<2x16xf32>
+# CHECK-NEXT:            } {"./i1"}
+# CHECK-NEXT:            %inserted_slice_8 = tensor.insert_slice %8 into %arg8[0, %arg7] [2, 16] [1, 1] : tensor<2x16xf32> into tensor<2x32xf32>
+# CHECK-NEXT:            scf.yield %inserted_slice_8 : tensor<2x32xf32>
 # CHECK-NEXT:          } {"./j"}
 # CHECK-NEXT:          %inserted_slice = tensor.insert_slice %7 into %arg6[%arg5, 0] [2, 32] [1, 1] : tensor<2x32xf32> into tensor<4x32xf32>
 # CHECK-NEXT:          scf.yield %inserted_slice : tensor<4x32xf32>
@@ -192,6 +188,8 @@ print(f"CODE: {res}")
 # CHECK-NEXT:        transform.apply_patterns.vector.lower_outerproduct
 # CHECK-NEXT:        transform.apply_patterns.vector.lower_contraction
 # CHECK-NEXT:      } : !transform.any_op
+# CHECK-NEXT:      %1 = transform.structured.match attributes {"./i1"} in %arg0 : (!transform.any_op) -> !transform.any_op
+# CHECK-NEXT:      transform.loop.unroll %1 {factor = 2 : i64} : !transform.any_op
 # CHECK-NEXT:      transform.yield 
 # CHECK-NEXT:    }
 # CHECK-NEXT:  }
@@ -234,35 +232,40 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          %5 = scf.for %arg7 = %c0 to %c32 step %c16 iter_args(%arg8 = %subview_3) -> (memref<2x32xf32, strided<[32, 1], offset: ?>>) {
 # CHECK-NEXT:            %subview_5 = memref.subview %subview_1[0, %arg7] [1, 16] [1, 1] : memref<1x32xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
 # CHECK-NEXT:            %subview_6 = memref.subview %arg8[0, %arg7] [2, 16] [1, 1] : memref<2x32xf32, strided<[32, 1], offset: ?>> to memref<2x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            %subview_7 = memref.subview %subview_2[0, 0] [1, 1] [1, 1] : memref<2x1xf32, strided<[512, 1], offset: ?>> to memref<1x1xf32, strided<[512, 1], offset: ?>>
-# CHECK-NEXT:            %subview_8 = memref.subview %subview_6[0, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            %6 = vector.transfer_read %subview_7[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x1xf32, strided<[512, 1], offset: ?>>, vector<1x1xf32>
+# CHECK-NEXT:            %c2_7 = arith.constant 2 : index
+# CHECK-NEXT:            %subview_8 = memref.subview %subview_2[%c0, 0] [1, 1] [1, 1] : memref<2x1xf32, strided<[512, 1], offset: ?>> to memref<1x1xf32, strided<[512, 1], offset: ?>>
+# CHECK-NEXT:            %subview_9 = memref.subview %subview_6[%c0, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            %6 = vector.transfer_read %subview_8[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x1xf32, strided<[512, 1], offset: ?>>, vector<1x1xf32>
 # CHECK-NEXT:            %7 = vector.transfer_read %subview_5[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x16xf32, strided<[32, 1], offset: ?>>, vector<1x16xf32>
-# CHECK-NEXT:            %8 = vector.transfer_read %subview_8[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x16xf32, strided<[32, 1], offset: ?>>, vector<1x16xf32>
+# CHECK-NEXT:            %8 = vector.transfer_read %subview_9[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x16xf32, strided<[32, 1], offset: ?>>, vector<1x16xf32>
 # CHECK-NEXT:            %9 = vector.extract %7[0] : vector<16xf32> from vector<1x16xf32>
 # CHECK-NEXT:            %10 = vector.extract %6[0, 0] : f32 from vector<1x1xf32>
 # CHECK-NEXT:            %11 = vector.broadcast %10 : f32 to vector<16xf32>
 # CHECK-NEXT:            %12 = vector.extract %8[0] : vector<16xf32> from vector<1x16xf32>
 # CHECK-NEXT:            %13 = vector.fma %11, %9, %12 : vector<16xf32>
 # CHECK-NEXT:            %14 = vector.insert %13, %cst [0] : vector<16xf32> into vector<1x16xf32>
-# CHECK-NEXT:            vector.transfer_write %14, %subview_8[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            %subview_9 = memref.subview %subview_6[0, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            memref.copy %subview_8, %subview_9 : memref<1x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            %subview_10 = memref.subview %subview_2[1, 0] [1, 1] [1, 1] : memref<2x1xf32, strided<[512, 1], offset: ?>> to memref<1x1xf32, strided<[512, 1], offset: ?>>
-# CHECK-NEXT:            %subview_11 = memref.subview %subview_6[1, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            %15 = vector.transfer_read %subview_10[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x1xf32, strided<[512, 1], offset: ?>>, vector<1x1xf32>
-# CHECK-NEXT:            %16 = vector.transfer_read %subview_11[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x16xf32, strided<[32, 1], offset: ?>>, vector<1x16xf32>
-# CHECK-NEXT:            %17 = vector.extract %7[0] : vector<16xf32> from vector<1x16xf32>
-# CHECK-NEXT:            %18 = vector.extract %15[0, 0] : f32 from vector<1x1xf32>
-# CHECK-NEXT:            %19 = vector.broadcast %18 : f32 to vector<16xf32>
-# CHECK-NEXT:            %20 = vector.extract %16[0] : vector<16xf32> from vector<1x16xf32>
-# CHECK-NEXT:            %21 = vector.fma %19, %17, %20 : vector<16xf32>
-# CHECK-NEXT:            %22 = vector.insert %21, %cst [0] : vector<16xf32> into vector<1x16xf32>
-# CHECK-NEXT:            vector.transfer_write %22, %subview_11[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            %subview_12 = memref.subview %subview_6[1, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            memref.copy %subview_11, %subview_12 : memref<1x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            %subview_13 = memref.subview %arg8[0, %arg7] [2, 16] [1, 1] : memref<2x32xf32, strided<[32, 1], offset: ?>> to memref<2x16xf32, strided<[32, 1], offset: ?>>
-# CHECK-NEXT:            memref.copy %subview_6, %subview_13 : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<2x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            vector.transfer_write %14, %subview_9[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            %subview_10 = memref.subview %subview_6[%c0, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            memref.copy %subview_9, %subview_10 : memref<1x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            %c1_11 = arith.constant 1 : index
+# CHECK-NEXT:            %15 = arith.muli %c1, %c1_11 : index
+# CHECK-NEXT:            %16 = arith.addi %c0, %15 : index
+# CHECK-NEXT:            %subview_12 = memref.subview %subview_2[%16, 0] [1, 1] [1, 1] : memref<2x1xf32, strided<[512, 1], offset: ?>> to memref<1x1xf32, strided<[512, 1], offset: ?>>
+# CHECK-NEXT:            %subview_13 = memref.subview %subview_6[%16, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            %17 = vector.transfer_read %subview_12[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x1xf32, strided<[512, 1], offset: ?>>, vector<1x1xf32>
+# CHECK-NEXT:            %18 = vector.transfer_read %subview_5[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x16xf32, strided<[32, 1], offset: ?>>, vector<1x16xf32>
+# CHECK-NEXT:            %19 = vector.transfer_read %subview_13[%c0, %c0], %0 {in_bounds = [true, true]} : memref<1x16xf32, strided<[32, 1], offset: ?>>, vector<1x16xf32>
+# CHECK-NEXT:            %20 = vector.extract %18[0] : vector<16xf32> from vector<1x16xf32>
+# CHECK-NEXT:            %21 = vector.extract %17[0, 0] : f32 from vector<1x1xf32>
+# CHECK-NEXT:            %22 = vector.broadcast %21 : f32 to vector<16xf32>
+# CHECK-NEXT:            %23 = vector.extract %19[0] : vector<16xf32> from vector<1x16xf32>
+# CHECK-NEXT:            %24 = vector.fma %22, %20, %23 : vector<16xf32>
+# CHECK-NEXT:            %25 = vector.insert %24, %cst [0] : vector<16xf32> into vector<1x16xf32>
+# CHECK-NEXT:            vector.transfer_write %25, %subview_13[%c0, %c0] {in_bounds = [true, true]} : vector<1x16xf32>, memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            %subview_14 = memref.subview %subview_6[%16, 0] [1, 16] [1, 1] : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            memref.copy %subview_13, %subview_14 : memref<1x16xf32, strided<[32, 1], offset: ?>> to memref<1x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            %subview_15 = memref.subview %arg8[0, %arg7] [2, 16] [1, 1] : memref<2x32xf32, strided<[32, 1], offset: ?>> to memref<2x16xf32, strided<[32, 1], offset: ?>>
+# CHECK-NEXT:            memref.copy %subview_6, %subview_15 : memref<2x16xf32, strided<[32, 1], offset: ?>> to memref<2x16xf32, strided<[32, 1], offset: ?>>
 # CHECK-NEXT:            scf.yield %arg8 : memref<2x32xf32, strided<[32, 1], offset: ?>>
 # CHECK-NEXT:          } {"./j"}
 # CHECK-NEXT:          %subview_4 = memref.subview %arg6[%arg5, 0] [2, 32] [1, 1] : memref<4x32xf32> to memref<2x32xf32, strided<[32, 1], offset: ?>>
