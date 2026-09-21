@@ -57,18 +57,18 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          A_pad = T.sblock_alloc_buffer((18, 18))
 # CHECK-NEXT:          B_pad = T.sblock_alloc_buffer((18, 18))
 # CHECK-NEXT:          matmul_padded = T.sblock_alloc_buffer((18, 18))
-# CHECK-NEXT:          for i0, i1 in T.grid(18, 18):
+# CHECK-NEXT:          for i, j in T.grid(18, 18):
 # CHECK-NEXT:              with T.sblock("A_pad"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(_0[v_i0 - 2, v_i1 - 2])
-# CHECK-NEXT:                  T.writes(A_pad[v_i0, v_i1])
-# CHECK-NEXT:                  A_pad[v_i0, v_i1] = T.if_then_else(2 <= v_i0 and v_i0 < 16 and 2 <= v_i1 and v_i1 < 16, _0[v_i0 - 2, v_i1 - 2], T.float32(0.0))
-# CHECK-NEXT:          for i0, i1 in T.grid(18, 18):
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(_0[v_i - 2, v_j - 2])
+# CHECK-NEXT:                  T.writes(A_pad[v_i, v_j])
+# CHECK-NEXT:                  A_pad[v_i, v_j] = T.if_then_else(2 <= v_i and v_i < 16 and 2 <= v_j and v_j < 16, _0[v_i - 2, v_j - 2], T.float32(0.0))
+# CHECK-NEXT:          for i, j in T.grid(18, 18):
 # CHECK-NEXT:              with T.sblock("B_pad"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(_1[v_i0 - 2, v_i1 - 2])
-# CHECK-NEXT:                  T.writes(B_pad[v_i0, v_i1])
-# CHECK-NEXT:                  B_pad[v_i0, v_i1] = T.if_then_else(2 <= v_i0 and v_i0 < 16 and 2 <= v_i1 and v_i1 < 16, _1[v_i0 - 2, v_i1 - 2], T.float32(0.0))
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(_1[v_i - 2, v_j - 2])
+# CHECK-NEXT:                  T.writes(B_pad[v_i, v_j])
+# CHECK-NEXT:                  B_pad[v_i, v_j] = T.if_then_else(2 <= v_i and v_i < 16 and 2 <= v_j and v_j < 16, _1[v_i - 2, v_j - 2], T.float32(0.0))
 # CHECK-NEXT:          for i, j, k in T.grid(18, 18, 18):
 # CHECK-NEXT:              with T.sblock("matmul_padded"):
 # CHECK-NEXT:                  v_i, v_j, v_k = T.axis.remap("SSR", [i, j, k])
@@ -77,12 +77,12 @@ print(f"CODE: {res}")
 # CHECK-NEXT:                  with T.init():
 # CHECK-NEXT:                      matmul_padded[v_i, v_j] = T.float32(0.0)
 # CHECK-NEXT:                  matmul_padded[v_i, v_j] = matmul_padded[v_i, v_j] + A_pad[v_i, v_k] * B_pad[v_k, v_j]
-# CHECK-NEXT:          for i0, i1 in T.grid(14, 14):
+# CHECK-NEXT:          for i, j in T.grid(14, 14):
 # CHECK-NEXT:              with T.sblock("C"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(matmul_padded[v_i0 + 2, v_i1 + 2])
-# CHECK-NEXT:                  T.writes(C[v_i0, v_i1])
-# CHECK-NEXT:                  C[v_i0, v_i1] = matmul_padded[v_i0 + 2, v_i1 + 2]
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(matmul_padded[v_i + 2, v_j + 2])
+# CHECK-NEXT:                  T.writes(C[v_i, v_j])
+# CHECK-NEXT:                  C[v_i, v_j] = matmul_padded[v_i + 2, v_j + 2]
 # CHECK-NEXT:  O = sch.get_sblock("matmul_padded")
 # CHECK-NEXT:  i, j, k, = sch.get_loops(O)
 # CHECK-NEXT:  sch.reorder(i, j, k)
@@ -101,18 +101,18 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          A_pad = T.sblock_alloc_buffer((18, 18))
 # CHECK-NEXT:          B_pad = T.sblock_alloc_buffer((18, 18))
 # CHECK-NEXT:          matmul_padded = T.sblock_alloc_buffer((18, 18))
-# CHECK-NEXT:          for i0, i1 in T.grid(18, 18):
+# CHECK-NEXT:          for i, j in T.grid(18, 18):
 # CHECK-NEXT:              with T.sblock("A_pad"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(_0[v_i0 - 2, v_i1 - 2])
-# CHECK-NEXT:                  T.writes(A_pad[v_i0, v_i1])
-# CHECK-NEXT:                  A_pad[v_i0, v_i1] = T.if_then_else(2 <= v_i0 and v_i0 < 16 and 2 <= v_i1 and v_i1 < 16, _0[v_i0 - 2, v_i1 - 2], T.float32(0.0))
-# CHECK-NEXT:          for i0, i1 in T.grid(18, 18):
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(_0[v_i - 2, v_j - 2])
+# CHECK-NEXT:                  T.writes(A_pad[v_i, v_j])
+# CHECK-NEXT:                  A_pad[v_i, v_j] = T.if_then_else(2 <= v_i and v_i < 16 and 2 <= v_j and v_j < 16, _0[v_i - 2, v_j - 2], T.float32(0.0))
+# CHECK-NEXT:          for i, j in T.grid(18, 18):
 # CHECK-NEXT:              with T.sblock("B_pad"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(_1[v_i0 - 2, v_i1 - 2])
-# CHECK-NEXT:                  T.writes(B_pad[v_i0, v_i1])
-# CHECK-NEXT:                  B_pad[v_i0, v_i1] = T.if_then_else(2 <= v_i0 and v_i0 < 16 and 2 <= v_i1 and v_i1 < 16, _1[v_i0 - 2, v_i1 - 2], T.float32(0.0))
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(_1[v_i - 2, v_j - 2])
+# CHECK-NEXT:                  T.writes(B_pad[v_i, v_j])
+# CHECK-NEXT:                  B_pad[v_i, v_j] = T.if_then_else(2 <= v_i and v_i < 16 and 2 <= v_j and v_j < 16, _1[v_i - 2, v_j - 2], T.float32(0.0))
 # CHECK-NEXT:          for i, j in T.grid(18, 18):
 # CHECK-NEXT:              with T.sblock("matmul_padded_init"):
 # CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
@@ -125,10 +125,10 @@ print(f"CODE: {res}")
 # CHECK-NEXT:                      T.reads(matmul_padded[v_i, v_j], A_pad[v_i, v_k], B_pad[v_k, v_j])
 # CHECK-NEXT:                      T.writes(matmul_padded[v_i, v_j])
 # CHECK-NEXT:                      matmul_padded[v_i, v_j] = matmul_padded[v_i, v_j] + A_pad[v_i, v_k] * B_pad[v_k, v_j]
-# CHECK-NEXT:          for i0, i1 in T.grid(14, 14):
+# CHECK-NEXT:          for i, j in T.grid(14, 14):
 # CHECK-NEXT:              with T.sblock("C"):
-# CHECK-NEXT:                  v_i0, v_i1 = T.axis.remap("SS", [i0, i1])
-# CHECK-NEXT:                  T.reads(matmul_padded[v_i0 + 2, v_i1 + 2])
-# CHECK-NEXT:                  T.writes(C[v_i0, v_i1])
-# CHECK-NEXT:                  C[v_i0, v_i1] = matmul_padded[v_i0 + 2, v_i1 + 2]
+# CHECK-NEXT:                  v_i, v_j = T.axis.remap("SS", [i, j])
+# CHECK-NEXT:                  T.reads(matmul_padded[v_i + 2, v_j + 2])
+# CHECK-NEXT:                  T.writes(C[v_i, v_j])
+# CHECK-NEXT:                  C[v_i, v_j] = matmul_padded[v_i + 2, v_j + 2]
 # CHECK-NEXT:  CODE: 0

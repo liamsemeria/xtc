@@ -57,12 +57,12 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          pad = T.sblock_alloc_buffer((1, 12, 12, 3))
 # CHECK-NEXT:          _3 = T.sblock_alloc_buffer((1200,))
 # CHECK-NEXT:          T_reshape = T.sblock_alloc_buffer((5, 5, 3, 16))
-# CHECK-NEXT:          for i0, i1, i2, i3 in T.grid(1, 12, 12, 3):
+# CHECK-NEXT:          for b, h, w, c in T.grid(1, 12, 12, 3):
 # CHECK-NEXT:              with T.sblock("pad"):
-# CHECK-NEXT:                  v_i0, v_i1, v_i2, v_i3 = T.axis.remap("SSSS", [i0, i1, i2, i3])
-# CHECK-NEXT:                  T.reads(_0[v_i0, v_i1 - 2, v_i2 - 2, v_i3])
-# CHECK-NEXT:                  T.writes(pad[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                  pad[v_i0, v_i1, v_i2, v_i3] = T.if_then_else(2 <= v_i1 and v_i1 < 10 and 2 <= v_i2 and v_i2 < 10, _0[v_i0, v_i1 - 2, v_i2 - 2, v_i3], T.float32(0.0))
+# CHECK-NEXT:                  v_b, v_h, v_w, v_c = T.axis.remap("SSSS", [b, h, w, c])
+# CHECK-NEXT:                  T.reads(_0[v_b, v_h - 2, v_w - 2, v_c])
+# CHECK-NEXT:                  T.writes(pad[v_b, v_h, v_w, v_c])
+# CHECK-NEXT:                  pad[v_b, v_h, v_w, v_c] = T.if_then_else(2 <= v_h and v_h < 10 and 2 <= v_w and v_w < 10, _0[v_b, v_h - 2, v_w - 2, v_c], T.float32(0.0))
 # CHECK-NEXT:          for i0 in range(1200):
 # CHECK-NEXT:              with T.sblock("%3"):
 # CHECK-NEXT:                  v_i0 = T.axis.spatial(1200, i0)
@@ -101,12 +101,12 @@ print(f"CODE: {res}")
 # CHECK-NEXT:          pad = T.sblock_alloc_buffer((1, 12, 12, 3))
 # CHECK-NEXT:          _3 = T.sblock_alloc_buffer((1200,))
 # CHECK-NEXT:          T_reshape = T.sblock_alloc_buffer((5, 5, 3, 16))
-# CHECK-NEXT:          for i0, i1, i2, i3 in T.grid(1, 12, 12, 3):
+# CHECK-NEXT:          for b, h, w, c in T.grid(1, 12, 12, 3):
 # CHECK-NEXT:              with T.sblock("pad"):
-# CHECK-NEXT:                  v_i0, v_i1, v_i2, v_i3 = T.axis.remap("SSSS", [i0, i1, i2, i3])
-# CHECK-NEXT:                  T.reads(_0[v_i0, v_i1 - 2, v_i2 - 2, v_i3])
-# CHECK-NEXT:                  T.writes(pad[v_i0, v_i1, v_i2, v_i3])
-# CHECK-NEXT:                  pad[v_i0, v_i1, v_i2, v_i3] = T.if_then_else(2 <= v_i1 and v_i1 < 10 and 2 <= v_i2 and v_i2 < 10, _0[v_i0, v_i1 - 2, v_i2 - 2, v_i3], T.float32(0.0))
+# CHECK-NEXT:                  v_b, v_h, v_w, v_c = T.axis.remap("SSSS", [b, h, w, c])
+# CHECK-NEXT:                  T.reads(_0[v_b, v_h - 2, v_w - 2, v_c])
+# CHECK-NEXT:                  T.writes(pad[v_b, v_h, v_w, v_c])
+# CHECK-NEXT:                  pad[v_b, v_h, v_w, v_c] = T.if_then_else(2 <= v_h and v_h < 10 and 2 <= v_w and v_w < 10, _0[v_b, v_h - 2, v_w - 2, v_c], T.float32(0.0))
 # CHECK-NEXT:          for i0 in range(1200):
 # CHECK-NEXT:              with T.sblock("%3"):
 # CHECK-NEXT:                  v_i0 = T.axis.spatial(1200, i0)

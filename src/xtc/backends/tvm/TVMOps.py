@@ -300,8 +300,7 @@ class TVMOperatorMatmul(TVMOperator):
 class TVMOperatorRelu(TVMOperator):
     DEFAULT_NAME = "relu"
     DEFAULT_THRESHOLD = 0
-    AXES = "i"
-    KINDS = "P"
+    AXES = "ijklmnopqrstuvwxyz"
 
     def __init__(
         self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
@@ -309,57 +308,59 @@ class TVMOperatorRelu(TVMOperator):
         attrs = {"threshold": self.DEFAULT_THRESHOLD, **attrs}
         super().__init__(args, attrs, name)
 
+    def _input_shape(self) -> tuple[int, ...]:
+        shape = self.attrs.get("inp_shape", self.args[:-1])
+        return tuple(shape)
+
     @override
     def dims(self, kind: str = "") -> tuple[str, ...]:
-        return self._dims(kind)
+        rank = len(self._input_shape())
+        assert rank <= len(self.AXES), f"unsupported relu input rank: {rank}"
+        axes = tuple(self.AXES[:rank])
+        if kind == "":
+            return axes
+        if kind == "P":
+            return axes
+        return ()
 
     @override
     def dims_sizes(self) -> dict[str, int]:
-        i, _ = self.args
-        return {"i": i}
+        return dict(zip(self.dims(), self._input_shape()))
 
     @override
     def generate_op(
         self, inputs: Sequence[TETensor] | None = None
     ) -> tuple[TETensor, ...]:
-        Ki, dtype = self.args
+        dtype = self.args[-1]
+        shape = self._input_shape()
         if inputs is None:
-            A = te.placeholder((Ki,), name="A", dtype=dtype)
+            A = te.placeholder(shape, name="A", dtype=dtype)
         else:
             (A,) = cast(Sequence[Any], inputs)
-        shape = tuple(A.shape)
-        size = mulall(A.shape)
-        newshape = (size,)
-        O = A
-        if shape != newshape:
-            O = topi.reshape(A, newshape=(size,))
         O = te.compute(
-            (Ki,),
-            lambda i,: tvm.tirx.max(self.attrs["threshold"], O[i]),
+            shape,
+            lambda *dims: tvm.tirx.max(self.attrs["threshold"], A[dims]),
             name=self.name,
+            varargs_names=list(self.dims()),
         )
-        if shape != newshape:
-            O = topi.reshape(O, newshape=shape)
         return cast(tuple[TETensor], (A, O))
 
     @override
     def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        i, _ = self.args
-        return ((i,),)
+        return (self._input_shape(),)
 
     @override
     def inputs_types(self) -> tuple[str, ...]:
-        _, dtype = self.args
+        dtype = self.args[-1]
         return (dtype,)
 
     @override
     def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        i, _ = self.args
-        return ((i,),)
+        return (self._input_shape(),)
 
     @override
     def outputs_types(self) -> tuple[str, ...]:
-        _, dtype = self.args
+        dtype = self.args[-1]
         return (dtype,)
 
 
@@ -436,7 +437,6 @@ class TVMOperatorConv2D(TVMOperator):
 class TVMOperatorPad(TVMOperator):
     DEFAULT_NAME = "pad"
     AXES = "ijklmnopqrstuvwxyz"
-    KINDS = "PPPPPPPPPPPPPPPPPP"
 
     def __init__(
         self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
@@ -446,19 +446,25 @@ class TVMOperatorPad(TVMOperator):
 
     @override
     def dims(self, kind: str = "") -> tuple[str, ...]:
-        return self._dims(kind)
+        rank = len(self.args[:-1])
+        assert rank <= len(self.AXES), f"unsupported pad input rank: {rank}"
+        axes = tuple(self.AXES[:rank])
+        if kind == "":
+            return axes
+        if kind == "P":
+            return axes
+        return ()
 
     @override
     def dims_sizes(self) -> dict[str, int]:
-        assert len(self.args[:-1]) <= len(self.AXES)
-        return {name: size for name, size in zip(self.AXES, self.args[:-1])}
+        return dict(zip(self.dims(), self.args[:-1]))
 
     @override
     def generate_op(
         self, inputs: Sequence[TETensor] | None = None
     ) -> tuple[TETensor, ...]:
         dtype = self.args[-1]
-        dims_values = list(self.args[:-1])
+        dims_values = tuple(self.dims_sizes().values())
         padding = self.attrs["padding"]
         constant_value = self.attrs["constant_value"]
         if isinstance(padding, dict):
@@ -503,25 +509,26 @@ class TVMOperatorPad(TVMOperator):
 
         O = te.compute(
             tuple(dims_values),
-            lambda *args: tvm.tirx.if_then_else(
-                tvm.tirx.all(*get_args_bounds(*args)),
-                A[get_indexes(*args)],
+            lambda *dims: tvm.tirx.if_then_else(
+                tvm.tirx.all(*get_args_bounds(*dims)),
+                A[get_indexes(*dims)],
                 constant_value,
             ),
             name=self.name,
+            varargs_names=list(self.dims()),
         )
         return cast(tuple[TETensor], (A, O))
 
     @override
     def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
         padding = self.attrs["padding"]
-        input_dim = list(self.args[:-1])
+        inp_dims = list(self.dims_sizes().values())
         if isinstance(padding, dict):
             for i, pad_value in padding.items():
-                input_dim[i] -= sum(pad_value)
+                inp_dims[i] -= sum(pad_value)
         else:
-            input_dim = [i_dim - sum(padding) for i_dim in input_dim]
-        return (tuple(input_dim),)
+            inp_dims = [i_dim - sum(padding) for i_dim in inp_dims]
+        return (tuple(inp_dims),)
 
     @override
     def inputs_types(self) -> tuple[str, ...]:
@@ -530,7 +537,7 @@ class TVMOperatorPad(TVMOperator):
 
     @override
     def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        return (self.args[:-1],)
+        return (tuple(self.dims_sizes().values()),)
 
     @override
     def outputs_types(self) -> tuple[str, ...]:
@@ -548,12 +555,12 @@ class TVMOperatorPad2D(TVMOperatorPad):
     ) -> None:
         attrs = {**attrs}
         super().__init__(args, attrs, name)
+        assert len(self.dims()) == 4, "unexpected rank for pad2d, must be 4"
 
 
 class TVMOperatorUnpad(TVMOperator):
     DEFAULT_NAME = "unpad"
     AXES = "ijklmnopqrstuvwxyz"
-    KINDS = "PPPPPPPPPPPPPPPPPP"
 
     def __init__(
         self, args: tuple[Any, ...], attrs: dict[str, Any], name: str | None = None
@@ -563,19 +570,25 @@ class TVMOperatorUnpad(TVMOperator):
 
     @override
     def dims(self, kind: str = "") -> tuple[str, ...]:
-        return self._dims(kind)
+        rank = len(self.args[:-1])
+        assert rank <= len(self.AXES), f"unsupported unpad input rank: {rank}"
+        axes = tuple(self.AXES[:rank])
+        if kind == "":
+            return axes
+        if kind == "P":
+            return axes
+        return ()
 
     @override
     def dims_sizes(self) -> dict[str, int]:
-        assert len(self.args[:-1]) <= len(self.AXES)
-        return {name: size for name, size in zip(self.AXES, self.args[:-1])}
+        return dict(zip(self.dims(), self.args[:-1]))
 
     @override
     def generate_op(
         self, inputs: Sequence[TETensor] | None = None
     ) -> tuple[TETensor, ...]:
         dtype = self.args[-1]
-        dims_values = list(self.args[:-1])
+        dims_values = tuple(self.dims_sizes().values())
         padding = self.attrs["padding"]
         if inputs is None:
             dims_values_before_unpad = list(dims_values)
@@ -601,20 +614,21 @@ class TVMOperatorUnpad(TVMOperator):
 
         O = te.compute(
             tuple(dims_values),
-            lambda *args: A[get_indexes(*args)],
+            lambda *dims: A[get_indexes(*dims)],
             name=self.name,
+            varargs_names=list(self.dims()),
         )
         return cast(tuple[TETensor], (A, O))
 
     @override
     def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
         padding = self.attrs["padding"]
-        inp_dims = list(self.args[:-1])
+        inp_dims = list(self.dims_sizes().values())
         if isinstance(padding, dict):
             for axis, pad in padding.items():
                 inp_dims[axis] += sum(pad)
         else:
-            inp_dims = [inp_dim + sum(padding) for inp_dim in inp_dims]
+            inp_dims = [i_dim + sum(padding) for i_dim in inp_dims]
         return (tuple(inp_dims),)
 
     @override
@@ -624,7 +638,7 @@ class TVMOperatorUnpad(TVMOperator):
 
     @override
     def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
-        return self.args[:-1]
+        return (tuple(self.dims_sizes().values()),)
 
     @override
     def outputs_types(self) -> tuple[str, ...]:

@@ -398,7 +398,7 @@ class _OperPadImpl:
         if isinstance(padding, dict):
             for axis, pad in padding.items():
                 assert -size_input_type_0 <= axis and axis < size_input_type_0, (
-                    "axis: {axis} is out of bound should be between {-size_input_type_0} and {size_input_type_0-1"
+                    f"axis: {axis} is out of bound should be between {-size_input_type_0} and {size_input_type_0 - 1}"
                 )
                 dims_types[axis] += sum(pad)
         else:
@@ -667,7 +667,7 @@ class XTCOperUnpad(XTCOperator):
         if isinstance(padding, dict):
             for axis, pad in padding.items():
                 assert -size_input_type_0 <= axis and axis < size_input_type_0, (
-                    "axis: {axis} is out of bound should be between {-size_input_type_0} and {size_input_type_0-1"
+                    f"axis: {axis} is out of bound should be between {-size_input_type_0} and {size_input_type_0 - 1}"
                 )
                 dims_types[axis] -= sum(pad)
         else:

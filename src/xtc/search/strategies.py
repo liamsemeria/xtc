@@ -10,7 +10,7 @@ from collections.abc import Sequence, Mapping, Iterator, Generator
 import itertools
 import numpy as np
 
-from xtc.itf.graph import Graph
+from xtc.itf.graph import Graph, Operation
 from xtc.itf.schd import Scheduler
 from xtc.itf.schd.scheduler import DEFAULT_ROOT
 from xtc.itf.search import Sample, Strategy
@@ -39,6 +39,21 @@ class StrategyRegistration:
     default_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
+def _get_target_operation(graph: Graph, node: str | None) -> Operation:
+    if node is None:
+        return graph.outputs_nodes[0].operation
+    matching_nodes = [
+        candidate for candidate in graph.nodes.values() if candidate.name == node
+    ]
+    if len(matching_nodes) != 1:
+        node_names = [candidate.name for candidate in graph.nodes.values()]
+        raise ValueError(
+            f"expected exactly one graph node named {node!r}, "
+            f"found {len(matching_nodes)} among {node_names}"
+        )
+    return matching_nodes[0].operation
+
+
 class BaseStrategy(Strategy):
     """Base abstract class for implementing the strategies in this file.
 
@@ -54,6 +69,7 @@ class BaseStrategy(Strategy):
         max_unroll: int = 256,
         threads: int = 1,
         max_parallelize: int = -1,
+        node: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._graph = graph
@@ -61,8 +77,8 @@ class BaseStrategy(Strategy):
         self._vec_size = vec_size
         self._max_unroll = max_unroll
         self._threads = threads
-        # Schedule output operation
-        self._op = graph.outputs_nodes[0].operation
+        # Schedule the selected operation, or the graph output by default.
+        self._op = _get_target_operation(graph, node)
         self._stats: dict[str, int] = {}
         self._parallelize = self._threads > 1
         self._max_parallelize = max_parallelize
@@ -359,9 +375,10 @@ class BaseStrategyPRTScheme(BaseStrategy):
     - `U`: all axes in random order, TODO: not implemented yet
     - `O`: first P-axis then R-axes, then remaining P-axis
 
-    We also define dditional items which can be mixed with tile items:
+    We also define additional items which can be mixed with tile items:
     - `W`: add an output write buffer at this level
     - `F`: fuse producer at this level
+    - `C`: fuse consumer at this level
 
     Then we can define scheme as a sequence of items, for instance:
     - `PRP`: P-axes, R-axes then a for all P-axes
@@ -396,6 +413,7 @@ class BaseStrategyPRTScheme(BaseStrategy):
             self._item_map,
             self._w_axes,
             self._f_axes,
+            self._c_axes,
         ) = self._init_order_tiles()
         self._tiles_idx = self._init_tiles_idx()
         self._x_size = sum([level - 1 for level in self._tiles_levels.values()])
@@ -415,12 +433,14 @@ class BaseStrategyPRTScheme(BaseStrategy):
         dict[int, list[str]],
         list[str],
         list[str],
+        list[str],
     ]:
         base_axis = {}
         item_map = {}
         order = []
         w_axes = []
         f_axes = []
+        c_axes = []
         levels = {axis: 0 for axis in self._axes}
         prev_axis = ""
         for item_idx, item in enumerate(self._scheme):
@@ -438,11 +458,15 @@ class BaseStrategyPRTScheme(BaseStrategy):
                 axis_lst = []
                 assert prev_axis
                 w_axes.append(prev_axis)
-            else:
-                assert item == "F"
+            elif item == "F":
                 axis_lst = []
                 assert prev_axis
                 f_axes.append(prev_axis)
+            else:
+                assert item == "C"
+                axis_lst = []
+                assert prev_axis
+                c_axes.append(prev_axis)
             item_axes = []
             for axis in axis_lst:
                 tiled_axis = f"{axis}" if levels[axis] == 0 else f"{axis}{levels[axis]}"
@@ -451,8 +475,9 @@ class BaseStrategyPRTScheme(BaseStrategy):
                 base_axis[tiled_axis] = axis
             order.extend(item_axes)
             item_map[item_idx] = item_axes
-            prev_axis = item_axes[-1] if item_axes else ""
-        return order, levels, base_axis, item_map, w_axes, f_axes
+            if item_axes:
+                prev_axis = item_axes[-1]
+        return order, levels, base_axis, item_map, w_axes, f_axes, c_axes
 
     def _init_tiles_idx(self) -> dict[str, int]:
         tiles_idx = {}
@@ -530,7 +555,8 @@ class BaseStrategyPRTScheme(BaseStrategy):
         x_names = [f"x{i}" for i in range(self._x_size)]
         w_names = [f"w{i}" for i in range(len(self._w_axes))]
         f_names = [f"f{i}" for i in range(len(self._f_axes))]
-        return x_names + w_names + f_names
+        c_names = [f"c{i}" for i in range(len(self._c_axes))]
+        return x_names + w_names + f_names + c_names
 
     def _vector_index(self) -> int | None:
         indexes = [self._tiles_idx[axis] for axis in self._vectorized]
@@ -627,7 +653,8 @@ class BaseStrategyPRTScheme(BaseStrategy):
         ]
         w_bools = [[[0], [1]]] * len(self._w_axes)
         f_bools = [[[0], [1]]] * len(self._f_axes)
-        return tiles + w_bools + f_bools
+        c_bools = [[[0], [1]]] * len(self._c_axes)
+        return tiles + w_bools + f_bools + c_bools
 
     @override
     def _filter(self, samples: Iterator[VecSample]) -> Iterator[VecSample]:
@@ -647,12 +674,18 @@ class BaseStrategyPRTScheme(BaseStrategy):
         buffers = [
             axis
             for idx, axis in enumerate(self._w_axes)
-            if in_x[-(len(self._w_axes) + len(self._f_axes)) + idx] != 0
+            if in_x[-(len(self._w_axes) + len(self._f_axes) + len(self._c_axes)) + idx]
+            != 0
         ]
         fuse_prods = [
             axis
             for idx, axis in enumerate(self._f_axes)
-            if in_x[-(len(self._f_axes)) + idx] != 0
+            if in_x[-(len(self._f_axes) + len(self._c_axes)) + idx] != 0
+        ]
+        fuse_consumers = [
+            axis
+            for idx, axis in enumerate(self._c_axes)
+            if in_x[-len(self._c_axes) + idx] != 0
         ]
         axes_order = self._order
         parallel_axes = self._parallel
@@ -668,6 +701,8 @@ class BaseStrategyPRTScheme(BaseStrategy):
             sch.buffer_at(axis)
         for axis in fuse_prods:
             sch.fuse_producer_at(axis, 0)
+        for axis in fuse_consumers:
+            sch.fuse_consumer_at(axis)
 
     def _check_divisibility_from_tiles(self, tiles: dict[str, int]) -> bool:
         divisible = all(
@@ -873,6 +908,46 @@ class Strategy_PFPWRPRPvr(Strategy_PFPWRPRP):
         return samples
 
 
+class Strategy_PFPCWRPRP(BaseStrategyPRTScheme):
+    """Strategy with write buffering and producer and consumer fusion.
+
+    The producer is fused at the outer parallel level and the consumer at the
+    following parallel tile level.
+    """
+
+    def __init__(self, graph: Graph, **kwargs: Any) -> None:
+        super().__init__(graph, scheme="PFPCWRPRP", **kwargs)
+
+
+class Strategy_PFPCWRPRPv(Strategy_PFPCWRPRP):
+    """Combined fusion strategy constrained to vectorizable inner tiles."""
+
+    def __init__(self, graph: Graph, **kwargs: Any) -> None:
+        super().__init__(graph, **kwargs)
+
+    @override
+    def _filter(self, samples: Iterator[VecSample]) -> Iterator[VecSample]:
+        samples = super()._filter(samples)
+        samples = self._filter_vectorized(samples, "filtered_vec")
+        return samples
+
+
+class Strategy_PFPCWRPRPvr(Strategy_PFPCWRPRP):
+    """Combined fusion strategy with register, L1, and L2 constraints."""
+
+    def __init__(self, graph: Graph, **kwargs: Any) -> None:
+        super().__init__(graph, **kwargs)
+
+    @override
+    def _filter(self, samples: Iterator[VecSample]) -> Iterator[VecSample]:
+        samples = super()._filter(samples)
+        samples = self._filter_vectorized(samples, "filtered_vec")
+        samples = self._filter_reg_num(samples, 1, "filtered_reg")
+        samples = self._filter_l1_size(samples, 2, "filtered_l1")
+        samples = self._filter_l2_size(samples, 3, "filtered_l2")
+        return samples
+
+
 class Strategy_PPWRPRP(BaseStrategyPRTScheme):
     """Strategy for Ansor like tiling and write buffer.
 
@@ -1037,9 +1112,10 @@ try:
             partial_tiles: bool = False,
             partial_unrolls: bool = False,
             initialize: bool = True,
+            node: str | None = None,
         ) -> None:
             self._graph = graph
-            self._op = graph.outputs_nodes[0].operation
+            self._op = _get_target_operation(graph, node)
             self._stats: dict[str, int] = {}
             self._axes = list(self._op.dims)
             self._sizes = self._constant_sizes()
@@ -1162,10 +1238,17 @@ try:
             partial_tiles: bool = False,
             partial_unrolls: bool = False,
             initialize: bool = True,
+            node: str | None = None,
         ) -> None:
             self._sample_shape: list[str] = []
             super().__init__(
-                graph, spec, constraints, partial_tiles, partial_unrolls, initialize
+                graph,
+                spec,
+                constraints,
+                partial_tiles,
+                partial_unrolls,
+                initialize,
+                node,
             )
 
         @override
@@ -1275,6 +1358,9 @@ Strategies.register("tile_ppwrprp_vr", Strategy_PPWRPRPvr, aliases=("tile8dvr",)
 Strategies.register("tile_pfpwrprp", Strategy_PFPWRPRP, aliases=("tile9d",))
 Strategies.register("tile_pfpwrprp_v", Strategy_PFPWRPRPv, aliases=("tile9dv",))
 Strategies.register("tile_pfpwrprp_vr", Strategy_PFPWRPRPvr, aliases=("tile9dvr",))
+Strategies.register("tile_pfpcwrprp", Strategy_PFPCWRPRP, aliases=("tile10d",))
+Strategies.register("tile_pfpcwrprp_v", Strategy_PFPCWRPRPv, aliases=("tile10dv",))
+Strategies.register("tile_pfpcwrprp_vr", Strategy_PFPCWRPRPvr, aliases=("tile10dvr",))
 Strategies.register("tile_goto", Strategy_GOTO)
 Strategies.register("tile_goto_r", Strategy_GOTO_R)
 Strategies.register("prt", BaseStrategyPRTScheme)
