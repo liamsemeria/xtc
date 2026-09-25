@@ -602,11 +602,10 @@ class MlirProgramInsertTransformPass:
         )
         if xtc_transform is None:
             warnings.warn(
-                "mlir.xtc_transform module not installed, falling back to normal unit folding if using tensors"
+                "mlir.xtc_transform module not installed, falling back to normal unit folding"
             )
-            if self._using_tensors:
-                with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
-                    ApplyFoldUnitExtentDimsViaSlicesPatternsOp()
+            with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
+                ApplyFoldUnitExtentDimsViaSlicesPatternsOp()
         else:
             with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
                 xtc_transform.ApplyFoldUnitExtentDimsViaSlicesForVectorizationPatternsOp()
