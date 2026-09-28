@@ -33,7 +33,6 @@ from mlir.ir import (
 )
 from mlir.passmanager import PassManager
 from mlir.ir import Module
-import logging
 
 import xtc.backends.mlir.MlirBindingsExtensions as binding_extensions
 
@@ -51,7 +50,6 @@ from .MlirProgram import RawMlirProgram
 from .MlirScheduler import MlirSchedule, MlirNodeSchedule
 from .MlirTarget import MlirTarget
 
-logger = logging.getLogger(__name__)
 
 _VECTO_SEQ_NAME = "_vecto"
 _SUPER_VECTORIZE_SEQ_NAME = "_super_vectorize"
@@ -597,15 +595,14 @@ class MlirProgramInsertTransformPass:
             return
         assert self._named_sequence is not None
 
-        xtc_transform = binding_extensions.module("mlir.xtc_transform")
+        xtc_transform = binding_extensions.module(
+            "mlir.xtc_transform", warning="falling back to normal unit folding"
+        )
         parent_op = get_parent_op(
             transform.AnyOpType.get(),
             sched_state.handle,
         )
         if xtc_transform is None:
-            logger.warning(
-                "WARNING: mlir.xtc_transform module not installed, falling back to normal unit folding"
-            )
             with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
                 ApplyFoldUnitExtentDimsViaSlicesPatternsOp()
         else:
