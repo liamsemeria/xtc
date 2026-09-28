@@ -32,7 +32,7 @@ sched = sch.schedule()
 
 comp = impl.get_compiler(
     shared_lib=True,
-    dump_file="relu_matmul_fused_tvm",
+    dump_file="relu_matmul_fused_under_k_tvm",
     print_source_ir=True,
     print_transformed_ir=True,
 )
