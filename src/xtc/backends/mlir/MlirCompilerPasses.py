@@ -56,6 +56,7 @@ from .MlirProgram import RawMlirProgram
 from .MlirScheduler import MlirSchedule, MlirNodeSchedule
 from .MlirTarget import MlirTarget
 
+
 _VECTO_SEQ_NAME = "_vecto"
 _SUPER_VECTORIZE_SEQ_NAME = "_super_vectorize"
 _POST_BUFFERIZE_SEQ_NAME = "_post_bufferize"
@@ -681,18 +682,24 @@ class MlirProgramInsertTransformPass:
             return
         assert self._named_sequence is not None
 
-        if self._using_tensors:
-            parent_op = get_parent_op(
-                transform.AnyOpType.get(),
-                sched_state.handle,
-            )
+        xtc_transform = binding_extensions.module(
+            "mlir.xtc_transform", warning="falling back to normal unit folding"
+        )
+        parent_op = get_parent_op(
+            transform.AnyOpType.get(),
+            sched_state.handle,
+        )
+        if xtc_transform is None:
             with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
                 ApplyFoldUnitExtentDimsViaSlicesPatternsOp()
-            sched_state.handle = structured_match(
-                results_=transform.AnyOpType.get(),
-                target=parent_op,
-                interface=MatchInterfaceEnum.LinalgOp,
-            )
+        else:
+            with InsertionPoint(transform.ApplyPatternsOp(parent_op).patterns):
+                xtc_transform.ApplyFoldUnitExtentDimsViaSlicesForVectorizationPatternsOp()
+        sched_state.handle = structured_match(
+            results_=transform.AnyOpType.get(),
+            target=parent_op,
+            interface=MatchInterfaceEnum.LinalgOp,
+        )
 
         if self._target.has_custom_vectorize():
             self._target.apply_custom_vectorize(sched_state.handle)

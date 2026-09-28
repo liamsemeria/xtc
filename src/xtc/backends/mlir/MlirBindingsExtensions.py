@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import threading
 from types import ModuleType
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,28 @@ def passes(pass_names: list[str]) -> list[str]:
     return [p for p in pass_names if _PASS_OWNER[p] in _loaded]
 
 
-def module(module_name: str) -> ModuleType | None:
-    """Return the loaded extension module, or None if unavailable."""
+def module(module_name: str, warning: str | None = None) -> ModuleType | None:
+    """Return the loaded extension module, or None if unavailable.
+
+    If ``warning`` is given and the module is missing, log
+    ``"<module> module not installed, <warning>"`` once per process.
+    """
     if module_name not in _EXTENSIONS:
         raise KeyError(f"unknown extension module: {module_name!r}")
-    return _loaded.get(module_name)
+    loaded = _loaded.get(module_name)
+    if loaded is None and warning is not None:
+        _warn_once(module_name, warning)
+    return loaded
+
+
+# (module, warning) pairs already warned about, shared by compile threads.
+_warned: set[tuple[str, str]] = set()
+_warned_lock = threading.Lock()
+
+
+def _warn_once(module_name: str, warning: str) -> None:
+    with _warned_lock:
+        if (module_name, warning) in _warned:
+            return
+        _warned.add((module_name, warning))
+    logger.warning("%s module not installed, %s", module_name, warning)
