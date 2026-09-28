@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 # Optional XTC extensions to the MLIR Python bindings: the module to import
 # mapped to the pass-pipeline entries it contributes.
 _EXTENSIONS: dict[str, tuple[str, ...]] = {
-    "mlir.xtc_transform": ("func.func(reduce-extract-slices)",),
+    "mlir.xtc_transform": (
+        "func.func(reduce-extract-slices)",
+        "scf-add-vector-acc",
+    ),
 }
 
 # Reverse map from a contributed pass to its providing module, so a pass can be
