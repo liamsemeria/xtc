@@ -34,6 +34,7 @@ from mlir.passmanager import PassManager
 from .MlirTarget import MlirTarget
 from ..MlirConfig import MlirConfig
 from ..MlirProgram import RawMlirProgram
+import xtc.backends.mlir.MlirBindingsExtensions as binding_extensions
 
 __all__ = ["MlirNVGPUTarget"]
 
@@ -437,7 +438,7 @@ class MlirProgramToLLVMDialectPass:
         self._mlir_program = mlir_program
 
     def _lowering_pipeline(self, sm_arch: str, ptx_version: str) -> list[str]:
-        return [
+        return binding_extensions.passes(["scf-add-vector-acc"]) + [
             "canonicalize",
             "cse",
             "sccp",
