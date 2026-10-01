@@ -25,7 +25,7 @@ print(graph)
 
 from xtc.utils.numpy import np_init
 
-inps = [T.Tensor(np_init(t.constant_shape, t.constant_dtype)-5) for t in inp_types]
+inps = [T.Tensor(np_init(t.constant_shape, t.constant_dtype)) for t in inp_types]
 print(f"Inputs: {inps}")
 outs = graph.forward(inps)
 print(f"Outputs: {outs}")
@@ -56,5 +56,5 @@ print(f"Outputs: {outs}")
 # CHECK-NEXT:    - %4: conv2d(%2, %3, stride=(2, 2)) : [2x10x10x3xfloat32, 5x5x3x8xfloat32] -> [2x3x3x8xfloat32]
 # CHECK-NEXT:    - %5: relu(%4, threshold=0.1) : [2x3x3x8xfloat32] -> [2x3x3x8xfloat32]
 # CHECK-NEXT:  
-# CHECK-NEXT:  Inputs: [Tensor(type=2x6x6x3xfloat32, data=-4 -3 -2 -1...1 2 3 4), Tensor(type=8x5x5x3xfloat32, data=-4 -3 -2 -1...-2 -1 0 1)]
-# CHECK-NEXT:  Outputs: [Tensor(type=2x3x3x8xfloat32, data=18 18 18 18...5 113 0.1 5)]
+# CHECK-NEXT:  Inputs: [Tensor(type=2x6x6x3xfloat32, data=-1 -0.875 -0.75 -0.625...0 0.125 0.25 0.375), Tensor(type=8x5x5x3xfloat32, data=-1 -0.875 -0.75 -0.625...-0.875 -0.75 -0.625 -0.5)]
+# CHECK-NEXT:  Outputs: [Tensor(type=2x3x3x8xfloat32, data=4.391 0.1 0.1 2.25...0.1 0.375 0.1 0.6094)]
