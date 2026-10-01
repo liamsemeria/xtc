@@ -40,7 +40,7 @@ print(out_types)
 
 from xtc.utils.numpy import np_init
 
-inps = [T.Tensor(np_init(t.constant_shape, t.constant_dtype)-5) for t in inp_types]
+inps = [T.Tensor(np_init(t.constant_shape, t.constant_dtype)) for t in inp_types]
 print(f"Inputs: {inps}")
 outs = mlp4.forward(inps)
 print(f"Outputs: {outs}")
@@ -74,5 +74,5 @@ print(f"Outputs: {outs}")
 # CHECK-NEXT:    - %20: reshape(%19, shape=(-1,))
 # CHECK-NEXT:  
 # CHECK-NEXT:  [10xfloat32]
-# CHECK-NEXT:  Inputs: [Tensor(type=32x32x3xfloat32, data=-4 -3 -2 -1...4 -4 -3 -2), Tensor(type=3072x512xfloat32, data=-4 -3 -2 -1...-2 -1 0 1), Tensor(type=512x256xfloat32, data=-4 -3 -2 -1...-3 -2 -1 0), Tensor(type=256x128xfloat32, data=-4 -3 -2 -1...0 1 2 3), Tensor(type=128x10xfloat32, data=-4 -3 -2 -1...3 4 -4 -3)]
-# CHECK-NEXT:  Outputs: [Tensor(type=10xfloat32, data=3.564e+10 5.293e+10 1.027e+10 -2.691e+10...-1.625e+10 1.047e+09 1.834e+10 3.564e+10)]
+# CHECK-NEXT:  Inputs: [Tensor(type=32x32x3xfloat32, data=-1 -0.875 -0.75 -0.625...0 0.125 0.25 0.375), Tensor(type=3072x512xfloat32, data=-1 -0.875 -0.75 -0.625...-0.625 -0.5 -0.375 -0.25), Tensor(type=512x256xfloat32, data=-1 -0.875 -0.75 -0.625...0.875 1 -1 -0.875), Tensor(type=256x128xfloat32, data=-1 -0.875 -0.75 -0.625...-0.375 -0.25 -0.125 0), Tensor(type=128x10xfloat32, data=-1 -0.875 -0.75 -0.625...-0.875 -0.75 -0.625 -0.5)]
+# CHECK-NEXT:  Outputs: [Tensor(type=10xfloat32, data=-6.517e+06 -2.118e+06 -1.537e+06 -1.964e+06...1.015e+06 -3.188e+06 1.21e+06 5.608e+06)]

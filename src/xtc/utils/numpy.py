@@ -11,9 +11,9 @@ from .math import mulall
 
 def np_init(shape: Sequence[int], dtype: str) -> numpy.typing.NDArray[Any]:
     """
-    Initialize and return a NP array filled
-    with numbers in [1, 9].
+    Initialize and return a NP array filled with the 17 evenly
+    spaced values in [-1, 1] with step 1/8: -1, -0.875, ..., 0, ..., 1.
+    Values are exact in binary floating point.
     """
     vals = np.arange(mulall(list(shape)))
-    vals = vals % 9 + 1
-    return vals.reshape(shape).astype(dtype)
+    return ((vals % 17 - 8) / 8).reshape(shape).astype(dtype)

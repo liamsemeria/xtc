@@ -25,7 +25,7 @@ print(graph)
 
 from xtc.utils.numpy import np_init
 
-inps = [T.Tensor(np_init(t.constant_shape, t.constant_dtype)-5) for t in inp_types]
+inps = [T.Tensor(np_init(t.constant_shape, t.constant_dtype)) for t in inp_types]
 print(f"Inputs: {inps}")
 outs = graph.forward(inps)
 print(f"Outputs: {outs}")
@@ -53,5 +53,5 @@ print(f"Outputs: {outs}")
 # CHECK-NEXT:    - %2: matmul(%0, %1) : [5x3xfloat32, 3x4xfloat32] -> [5x4xfloat32]
 # CHECK-NEXT:    - %3: relu(%2) : [5x4xfloat32] -> [5x4xfloat32]
 # CHECK-NEXT:  
-# CHECK-NEXT:  Inputs: [Tensor(type=5x3xfloat32, data=-4 -3 -2 -1...-2 -1 0 1), Tensor(type=3x4xfloat32, data=-4 -3 -2 -1...4 -4 -3 -2)]
-# CHECK-NEXT:  Outputs: [Tensor(type=5x4xfloat32, data=8 17 8 0...8 0 0 0)]
+# CHECK-NEXT:  Inputs: [Tensor(type=5x3xfloat32, data=-1 -0.875 -0.75 -0.625...0.375 0.5 0.625 0.75), Tensor(type=3x4xfloat32, data=-1 -0.875 -0.75 -0.625...0 0.125 0.25 0.375)]
+# CHECK-NEXT:  Outputs: [Tensor(type=5x4xfloat32, data=1.438 1.109 0.7812 0.4531...0 0 0 0)]
