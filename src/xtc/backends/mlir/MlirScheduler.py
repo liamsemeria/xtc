@@ -109,6 +109,9 @@ class MlirScheduler(itf.schd.Scheduler):
         else:
             assert isinstance(self._backend, MlirNodeBackend)
             nodes_schedules = [self._current_scheduler.get_node_schedule()]
+        # verify the schedule
+        if self._node_scheduler:
+            self.get_loop_nest().check()
         return MlirSchedule(
             scheduler=self,
             nodes_schedules=nodes_schedules,

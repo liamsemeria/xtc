@@ -64,7 +64,7 @@ print(f"CODE: {res}")
 # CHECK-NEXT:      transform.annotate %loops_1 "./j" : !transform.any_op
 # CHECK-NEXT:      %1 = transform.structured.match attributes {__xtc_id_C_} in %arg0 : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %tiled_op, %forall_op = transform.structured.tile_using_forall %1 tile_sizes [8, 128, 0](mapping = [#gpu.block<x>, #gpu.block<y>]) : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %forall_op "./j" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %forall_op "./i" : !transform.any_op
 # CHECK-NEXT:      %tiled_op_2, %forall_op_3 = transform.structured.tile_using_forall %tiled_op tile_sizes [0, 64, 0](mapping = [#gpu.warp<x>]) : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
 # CHECK-NEXT:      transform.annotate %forall_op_3 "./j1" : !transform.any_op
 # CHECK-NEXT:      %tiled_op_4, %forall_op_5 = transform.structured.tile_using_forall %tiled_op_2 tile_sizes [4, 4, 0](mapping = [#gpu.lane<linear_dim_0>, #gpu.lane<linear_dim_1>]) : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
