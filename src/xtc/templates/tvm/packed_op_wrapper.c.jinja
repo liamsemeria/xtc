@@ -29,6 +29,7 @@ typedef struct {
 
 /* Refer to dlpack.h */
 #define kDLCPU 1
+#define kDLCUDA 2
 #define kDLFloat 2
 
 typedef struct {
@@ -57,7 +58,7 @@ extern int32_t {{tvm_ffi_func_name}}(void *ctx, TVMFFIAny *args, int32_t num_arg
 
 void {{func_name}}({% for idx in range(inputs|length) %}{% if idx > 0 %}, {% endif %}const float *input{{idx}}{% endfor %}{% for idx in range(outputs|length) %}, float *output{{idx}}{% endfor %}) {
     static const DLDataType dtype = { kDLFloat, 32, 1 };
-    static const DLDevice dev = { kDLCPU, 0 };
+    static const DLDevice dev = { {{dl_device_type}}, 0 };
 {% for idx in range(inputs|length) %}
     static const int64_t DL_input{{idx}}_shape[{{inputs[idx].shape|length}}] = { {% for dim in inputs[idx].shape %}{{dim}}, {% endfor %} };
     DLTensor DL_input{{idx}} = { (void *)input{{idx}}, dev, {{inputs[idx].shape|length}}, dtype, (int64_t *)DL_input{{idx}}_shape, NULL, 0 };

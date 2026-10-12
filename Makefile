@@ -9,6 +9,7 @@ help:
 	@echo "    make check-lit     # run all lit checks for binary target"
 	@echo "    make check-lit-c   # run all lit checks for C target"
 	@echo "    make check-lit-nvgpu # run all lit checks for NVGPU target"
+	@echo "    make check-lit-tvm-cuda # run lit checks for TVM CUDA tests (requires a GPU)"
 	@echo "    make check-pytest  # run all pytest tests"
 	@echo "    make check-banwords # run banned words checks"
 	@echo "    make check-tutorials # run tutorials checks
@@ -68,6 +69,9 @@ check-lit-nvgpu:
 check-lit-mppa:
 	[ `uname -s` = Darwin ] || env XTC_MLIR_TARGET=mppa lit -v -j 1 tests/filecheck/backends/target_mppa tests/filecheck/evaluation/test_matmul_pmu_counters_mppa.py
 
+check-lit-tvm-cuda:
+	[ `uname -s` = Darwin ] || env XTC_TVM_CUDA=1 lit -v tests/filecheck/backends/target_gpu
+
 check-pytest:
 	scripts/pytest/run_pytest.sh -v
 
@@ -105,5 +109,5 @@ claude:
 run-tutorial:
 	marimo run docs/tutorials/xtc_101.py
 
-.PHONY: help test check check-lit-all check-lit check-lit-c check-lit-nvgpu check-pytest check-type check-pyright check-mypy check-format check-format-ruff check-license check-banwords format format-ruff format-license agents claude check-tutorials run-tutorial check-dependencies dependencies wheel pages
+.PHONY: help test check check-lit-all check-lit check-lit-c check-lit-nvgpu check-lit-tvm-cuda check-pytest check-type check-pyright check-mypy check-format check-format-ruff check-license check-banwords format format-ruff format-license agents claude check-tutorials run-tutorial check-dependencies dependencies wheel pages
 .SUFFIXES:

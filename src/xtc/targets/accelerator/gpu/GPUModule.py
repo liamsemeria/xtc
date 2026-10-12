@@ -13,7 +13,7 @@ from xtc.utils.evaluation import (
     graph_reference_impl,
 )
 from .GPUEvaluator import GPUExecutor, GPUEvaluator
-
+from .TVMGPUEvaluator import TVMGPUExecutor, TVMGPUEvaluator
 
 __all__ = [
     "GPUModule",
@@ -52,6 +52,7 @@ class GPUModule(itf.comp.Module):
             self._np_inputs_spec = kwargs.get("np_inputs_spec")
             self._np_outputs_spec = kwargs.get("np_outputs_spec")
             self._reference_impl = kwargs.get("reference_impl")
+        self._backend = kwargs.get("backend", "mlir")
 
     @property
     @override
@@ -79,14 +80,30 @@ class GPUModule(itf.comp.Module):
 
     @override
     def get_evaluator(self, **kwargs: Any) -> itf.exec.Evaluator:
-        return GPUEvaluator(
-            self,
-            **kwargs,
-        )
+        if self._backend == "mlir":
+            return GPUEvaluator(
+                self,
+                **kwargs,
+            )
+        elif self._backend == "tvm":
+            return TVMGPUEvaluator(
+                self,
+                **kwargs,
+            )
+        else:
+            raise Exception("Unknown backend for Evaluator")
 
     @override
     def get_executor(self, **kwargs: Any) -> itf.exec.Executor:
-        return GPUExecutor(
-            self,
-            **kwargs,
-        )
+        if self._backend == "mlir":
+            return GPUExecutor(
+                self,
+                **kwargs,
+            )
+        elif self._backend == "tvm":
+            return TVMGPUExecutor(
+                self,
+                **kwargs,
+            )
+        else:
+            raise Exception("Unknown backend for Executor")
