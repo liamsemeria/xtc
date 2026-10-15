@@ -25,6 +25,7 @@ from .TVMOps import TVMOperation
 # Actual backend Schedule implementation is a mapping
 # from op name to the TVM schedule string
 ScheduleImpl: TypeAlias = dict[str, str]
+_GPU_DIM = {0: "x", 1: "y", 2: "z"}
 
 
 class TVMScheduleEmitter(ABC):
@@ -110,6 +111,12 @@ class TVMScheduleEmitterTIR(TVMScheduleEmitter):
         reorder = list(dict.fromkeys(reorder))
         inner = [axis for axis in reorder if axis not in outer]
         print(f"{sch}.reorder({', '.join(reorder)})", file=outf)
+        for i, gpu_axis in enumerate(node.gpu_block):
+            print(f"{sch}.bind({gpu_axis}, 'blockIdx.{_GPU_DIM[i]}')", file=outf)
+        # If there is no block there should be any gpu thread either
+        if node.gpu_block:
+            for i, gpu_axis in enumerate(node.gpu_thread):
+                print(f"{sch}.bind({gpu_axis}, 'threadIdx.{_GPU_DIM[i]}')", file=outf)
         if node.buffer_at:
             for axis in node.buffer_at:
                 print(f"{sch}.reverse_compute_at(O_W0, {axis})", file=outf)
@@ -264,6 +271,8 @@ def tvm_update_loopnest_for_codegen(sched: LoopNest) -> LoopNest:
             pack_at=deepcopy(node.pack_at),
             fuse_producer_at=deepcopy(node.fuse_producer_at),
             fuse_consumer_at=deepcopy(node.fuse_consumer_at),
+            gpu_block=deepcopy(node.gpu_block),
+            gpu_thread=deepcopy(node.gpu_thread),
             external_at=deepcopy(node.external_at),
             split_origin=deepcopy(node.split_origin),
         )
@@ -427,13 +436,11 @@ class TVMScheduler(itf.schd.Scheduler):
 
     @override
     def gpu_block(self, axes: list[str], root: str = DEFAULT_ROOT) -> None:
-        # TODO: not implemented for now
-        pass
+        self._plain_sch.gpu_block(axes, root)
 
     @override
     def gpu_thread(self, axes: list[str], root: str = DEFAULT_ROOT) -> None:
-        # TODO: not implemented for now
-        pass
+        self._plain_sch.gpu_thread(axes, root)
 
     @override
     def gpu_lane(self, axes: list[str], root: str = DEFAULT_ROOT) -> None:

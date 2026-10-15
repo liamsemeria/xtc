@@ -4,6 +4,8 @@
 #
 from typing import Any, cast
 from typing_extensions import override
+import importlib.util
+import os
 import tempfile
 from pathlib import Path
 import shutil
@@ -23,11 +25,15 @@ from xtc_build import (
 
 from xtc.targets.host import HostModule
 
+from xtc.targets.accelerator.gpu import GPUModule
+
 import xtc.backends.tvm as backend
 import xtc.itf as itf
+from xtc.itf.runtime.common import CommonRuntimeInterface
 from xtc.utils.text import jinja_generate_file
 from xtc.utils.tarfile import TarFile
 from xtc.utils.ext_tools import cc_opts
+from xtc.utils.tools import get_cuda_prefix
 
 from xtc.utils.host_tools import (
     disassemble,
@@ -84,9 +90,18 @@ class TVMCompiler(itf.comp.Compiler):
         self.emit_c = kwargs.get("emit_c", False)
         self.csrcs = [] if csrcs is None else csrcs[:]
         self.csrcs_xflags = "" if csrcs_xflags is None else csrcs_xflags
-        self.target = kwargs.get("target", "native")
+        target = kwargs.get("target", "native")
+        self._runtime_target: CommonRuntimeInterface | None = None
+        if isinstance(target, CommonRuntimeInterface):
+            self._runtime_target = target
+            target = target.target_name()
+        self.target: str = target
         self.arch = kwargs.get("arch", "native")
-        self.tvm_target = "llvm"
+        if self.target == "nvgpu":
+            self.tvm_target = "cuda"
+            self._ensure_cuda_compiler()
+        else:
+            self.tvm_target = "llvm"
         self.tvm_target_options = self._get_tvm_target_options(self.target, self.arch)
         self.tvm_tgt = self._get_tvm_target(self.tvm_target, self.tvm_target_options)
         assert not self.executable, f"executable generation not supported yet for TVM"
@@ -96,11 +111,20 @@ class TVMCompiler(itf.comp.Compiler):
         assert not (self.shared_lib and self.ar_lib), (
             f"cannot have both shlib and arlib"
         )
+        assert not (self.target == "nvgpu" and self.emit_c), (
+            "C source emission is not supported for the nvgpu target"
+        )
 
     @property
     @override
     def backend(self) -> itf.back.Backend:
         return self._backend
+
+    @property
+    def _host_arch(self) -> str:
+        # The host toolchain (cc/ar/objdump) is always native, the gpu
+        # target name is not a host arch
+        return "" if self.target == "nvgpu" else self.target
 
     @override
     def get_source_ir(self, schedule: itf.schd.Schedule) -> str:
@@ -150,6 +174,7 @@ class TVMCompiler(itf.comp.Compiler):
             emit_c_base = lib_path
         packed_lib_path = f"{lib_path}_tvm_ffi"
         emit_c_packed_base = f"{emit_c_base}_tvm_ffi"
+        extra_shlibs: list[str] = []
         expr_compiler = TVMExprCompiler(op)
         schedulable = expr_compiler.generate()
         if self.print_source_ir or self.save_temps:
@@ -181,16 +206,26 @@ class TVMCompiler(itf.comp.Compiler):
                     self._save_temp(f"{dump_base}.lib{idx}.ll", llvm_ir)
                     # This will generate a .tar with the .o files
                     # built.export_library(f"{save_temps_dir}/{packed_lib_path}.tar")
-            self._export_archive(built, f"{packed_lib_path}.a")
-            if self.save_temps:
-                self._save_temp_file(f"{packed_lib_path}.a")
+            if self.target == "nvgpu":
+                # A static archive drops the device code, link the
+                # tvm-built cuda module as a shared library instead
+                cuda_lib = f"{packed_lib_path}_cuda.so"
+                built.export_library(cuda_lib)
+                extra_shlibs.append(cuda_lib)
+                if self.save_temps:
+                    self._save_temp_file(cuda_lib)
+            else:
+                self._export_archive(built, f"{packed_lib_path}.a")
+                if self.save_temps:
+                    self._save_temp_file(f"{packed_lib_path}.a")
 
         wrapper = PackedOperatorWrapper(
             op,
             func_name,
             tvm_ffi_func_name,
-            arch=self.target,
+            arch=self._host_arch,
             bare_ptr=self.bare_ptr,
+            cuda=self.target == "nvgpu",
         )
         if type in ["shlib", "arlib"] and self.emit_c:
             wrapper.build(emit_c_base, emit_c_packed_base, type="csrc")
@@ -202,6 +237,7 @@ class TVMCompiler(itf.comp.Compiler):
             type=type,
             additional_csrcs=self.csrcs,
             additional_csrcs_xflags=self.csrcs_xflags,
+            extra_shlibs=extra_shlibs,
         )
         assert Path(module_file).with_suffix("") == Path(lib_path)
         if self.save_temps:
@@ -215,18 +251,29 @@ class TVMCompiler(itf.comp.Compiler):
                 function=compute_func_name,
                 section="text",
                 color=self.color,
-                arch=self.target,
+                arch=self._host_arch,
             )
             print(disassembly, flush=True)
-        return HostModule(
-            dump_base,
-            func_name,
-            module_file,
-            type,
-            **module_args,
-            bare_ptr=self.bare_ptr,
-            graph=self._backend._graph,
-        )
+        if self.tvm_target == "cuda":
+            return GPUModule(
+                dump_base,
+                func_name,
+                module_file,
+                type,
+                **module_args,
+                graph=self._backend._graph,
+                backend="tvm",
+            )
+        else:
+            return HostModule(
+                dump_base,
+                func_name,
+                module_file,
+                type,
+                **module_args,
+                bare_ptr=self.bare_ptr,
+                graph=self._backend._graph,
+            )
 
     def _print(self, *content: Any) -> None:
         print(*content, flush=True, file=self.print_file)
@@ -272,6 +319,8 @@ class TVMCompiler(itf.comp.Compiler):
         if target == "native":
             assert arch in ["native", ""]
             return cls._get_tvm_native_target_options()
+        elif target == "nvgpu":
+            return cls._get_tvm_cuda_target_options(arch)
         else:
             assert arch != "native", f"can't pass native arch for non native target"
         tvm_cpu = ""
@@ -317,6 +366,52 @@ class TVMCompiler(itf.comp.Compiler):
             **(dict(mtriple=tvm_triple) if tvm_triple else {}),
             **(dict(mcpu=tvm_cpu) if tvm_cpu else {}),
             **(dict(mattr=tvm_attrs) if tvm_attrs else {}),
+        }
+
+    @staticmethod
+    def _ensure_cuda_compiler() -> None:
+        # TVM >= 0.26 compiles device code with NVRTC through the
+        # cuda-bindings package by default; fall back to the nvcc
+        # subprocess when that package is not installed. An explicit
+        # TVM_CUDA_COMPILE_MODE always wins.
+        try:
+            nvrtc_available = (
+                importlib.util.find_spec("cuda.bindings.nvrtc") is not None
+            )
+        except ModuleNotFoundError:
+            nvrtc_available = False
+        if not nvrtc_available:
+            os.environ.setdefault("TVM_CUDA_COMPILE_MODE", "nvcc")
+
+    @classmethod
+    def _get_tvm_cuda_target_options(cls, arch: str = "native") -> dict:
+        """
+        Return the tvm target options given the cuda arch
+        """
+        if not tvm.runtime.enabled("cuda"):
+            raise RuntimeError(
+                "TVM was built without CUDA support, cannot target nvgpu"
+            )
+        if arch in ["native", ""]:
+            try:
+                # compute_version is not declared in the Device type stubs
+                compute_version = cast(Any, tvm.device("cuda", 0)).compute_version
+            except Exception as e:
+                raise RuntimeError(
+                    "no CUDA device visible, cannot auto-detect the gpu arch "
+                    "(check nvidia-smi / CUDA_VISIBLE_DEVICES)"
+                ) from e
+            major, minor = compute_version.split(".")
+            mcpu = f"sm_{major}{minor}"
+        else:
+            normalized = arch.replace(".", "")
+            mcpu = normalized if normalized.startswith("sm_") else f"sm_{normalized}"
+            if not mcpu[3:].isdigit():
+                raise ValueError(f"invalid cuda arch: {arch} (expected e.g. sm_89)")
+        # No mtriple here: the cuda target schema has no such option, the
+        # nvptx triple is implied by the kind
+        return {
+            "mcpu": mcpu,
         }
 
     @classmethod
@@ -381,7 +476,7 @@ class TVMCompiler(itf.comp.Compiler):
 
         fcompile = partial(
             cc.create_staticlib,
-            ar=binutils_command("ar", self.target),
+            ar=binutils_command("ar", self._host_arch),
         )
         mod.export_library(archive_path, fcompile=fcompile)
         assert Path(archive_path).exists()
@@ -397,12 +492,14 @@ class PackedOperatorWrapper:
         packed_func_name: str,
         arch: str = "",
         bare_ptr: bool = False,
+        cuda: bool = False,
     ) -> None:
         self.operation = operation
         self.func_name = func_name
         self.packed_func_name = packed_func_name
         self._arch = arch
         self._bare_ptr = bare_ptr
+        self._cuda = cuda
 
     def generate_c(self, output_base: str, header: bool = False) -> None:
         config = {
@@ -410,6 +507,9 @@ class PackedOperatorWrapper:
             "outputs": self.operation.np_outputs_spec(),
             "func_name": self.func_name,
             "tvm_ffi_func_name": self.packed_func_name,
+            # The bare wrapper builds DLTensors around the raw pointers;
+            # a cuda kernel only accepts kDLCUDA tensors.
+            "dl_device_type": "kDLCUDA" if self._cuda else "kDLCPU",
         }
         if self._bare_ptr:
             jinja_generate_file(
@@ -437,11 +537,13 @@ class PackedOperatorWrapper:
         type: str,
         additional_csrcs: list[str] | None = None,
         additional_csrcs_xflags: str | None = None,
+        extra_shlibs: list[str] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         additional_csrcs = [] if additional_csrcs is None else additional_csrcs[:]
         additional_csrcs_xflags = (
             "" if additional_csrcs_xflags is None else additional_csrcs_xflags
         )
+        extra_shlibs = [] if extra_shlibs is None else extra_shlibs[:]
         for csrc in additional_csrcs:
             if not Path(csrc).is_file():
                 raise FileNotFoundError(f"Additional C source not found: {csrc}")
@@ -454,7 +556,7 @@ class PackedOperatorWrapper:
         assert packed_lib_dir == unpacked_lib_dir, (
             f"must generate wrapper at the same location as packed lib"
         )
-        if type in ["shlib", "arlib"]:
+        if type in ["shlib", "arlib"] and not extra_shlibs:
             assert Path(packed_ar_name).exists()
         tdir = tempfile.mkdtemp(dir=unpacked_lib_dir)
         try:
@@ -520,15 +622,26 @@ class PackedOperatorWrapper:
                 shlibs += [
                     f"{tvm_libdir}/libtvm_runtime{ext}",
                     f"{tvm_ffi_libdir}/libtvm_ffi{ext}",
+                    *extra_shlibs,
                 ]
                 if type == "shlib":
                     link_flags = [*cc_opts]
+                    if self._cuda:
+                        link_flags += [
+                            f"-L{get_cuda_prefix()}/lib64",
+                            "-lcudart",
+                            "-lcuda",
+                        ]
                     if sys.platform == "darwin":
                         link_flags.extend(["-undefined", "dynamic_lookup"])
                     library = SharedLibrary(
                         unpacked_lib_base,
                         objects=objects,
-                        archives=[ExternalArchive(packed_ar_name, pic=True)],
+                        archives=(
+                            [ExternalArchive(packed_ar_name, pic=True)]
+                            if not extra_shlibs
+                            else []
+                        ),
                         libraries=[ExternalSharedLibrary(path) for path in shlibs],
                         link_flags=link_flags,
                     )
