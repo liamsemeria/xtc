@@ -576,10 +576,17 @@ class Exploration:
         progress.search_start(
             args.trials * len(args.backends), initial=n_start * len(args.backends)
         )
+        n_done = n_start
         try:
             for step in range(n_start, args.trials, args.batch):
                 size = min(args.batch, args.trials - step)
                 in_x = opt.suggest()[:size]
+                if not in_x:
+                    logger.info(
+                        "No unevaluated sample left, stopping after %d samples", n_done
+                    )
+                    break
+                n_done += len(in_x)
                 results = self.evaluate_all_parallel(
                     strategy, np.array(in_x), graph, callbacks=callbacks
                 )
