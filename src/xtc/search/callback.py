@@ -19,6 +19,33 @@ from xtc.cli.query_results import ResultsDB
 logger = logging.getLogger(__name__)
 
 
+def read_csv_results(
+    fname: str, sample_names: list[str], backend: str
+) -> list[tuple[list[int], float]]:
+    """Reads the (sample, time) pairs recorded for backend in a CSV output file.
+
+    Rows that cannot be parsed or have a non positive time are skipped.
+    """
+    in_path = Path(fname)
+    if not in_path.exists() or in_path.stat().st_size == 0:
+        return []
+    results: list[tuple[list[int], float]] = []
+    with open(in_path, newline="") as infile:
+        reader = csv.DictReader(infile, delimiter=",")
+        for row in reader:
+            if row.get("backend") != backend:
+                continue
+            try:
+                sample = [int(row[name]) for name in sample_names]
+                time = float(row["time"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if time <= 0:
+                continue
+            results.append((sample, time))
+    return results
+
+
 class ResultCallBack(ABC):
     @abstractmethod
     def __call__(self, result: Sequence) -> None: ...

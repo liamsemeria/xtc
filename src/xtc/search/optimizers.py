@@ -27,6 +27,7 @@ class BaseOptimizer(Optimizer):
     ):
         self.sample_fn = sample_fn
         self.batch = batch
+        self.seed = seed
         self.rng = random.Random(seed)
 
     @override
@@ -36,6 +37,13 @@ class BaseOptimizer(Optimizer):
     @override
     def observe(self, x: list[VecSample], y: list[float]):
         pass
+
+    @override
+    def restore(self, x: list[VecSample], y: list[float]):
+        if not x:
+            return
+        self.observe(x, y)
+        logger.info(f"restored {len(x)} samples, seed: {self.seed}")
 
     @override
     def finished(self):
@@ -85,7 +93,6 @@ class RandomForestOptimizer(BaseOptimizer):
         self.update_first = update_first if update_first else batch
         self.update_period = update_period if update_period else batch
         self.beta = beta
-        self.seed = seed
         self.alpha = alpha
         self.beta_min = 0.05
         self.update_last = 0
@@ -147,6 +154,12 @@ class RandomForestOptimizer(BaseOptimizer):
         if update_n > self.update_last:
             self.rf.fit(self.X[:update_n], self.y[:update_n])
             self.update_last = update_n
+
+    @override
+    def restore(self, x: list[VecSample], y: list[float]):
+        super().restore(x, y)
+        if x:
+            logger.info(f"restored best_y: {self.best_y} best_x: {self.best_x}")
 
     @override
     def finished(self):
