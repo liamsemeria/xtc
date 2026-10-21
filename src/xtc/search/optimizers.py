@@ -225,11 +225,17 @@ class BaseOptimizerPreset(BaseOptimizer):
         seed: int,
         config_file: str = "",
     ):
-        config = dict(self.PRESET)
+        config = self.resolve_config(config_file)
+        super().__init__(sample_fn, batch, seed, **config)
+
+    @classmethod
+    def resolve_config(cls, config_file: str = "") -> dict[str, Any]:
+        """Returns the preset parameters updated with the config file ones."""
+        config = dict(cls.PRESET)
         if config_file:
             with open(config_file, "r") as f:
                 config.update(yaml.safe_load(f))
-        super().__init__(sample_fn, batch, seed, **config)
+        return config
 
 
 class RandomOptimizerPreset(BaseOptimizerPreset, RandomOptimizer):

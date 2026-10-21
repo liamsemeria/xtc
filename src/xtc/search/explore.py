@@ -730,6 +730,12 @@ class Exploration:
             "platform": {"platform": sys.platform, "cwd": str(Path.cwd())},
             "args": self._args_to_metadata(args),
         }
+        if args.search == "iterative":
+            optimizer = Optimizers.from_name(args.optimizer)
+            payload["optimizer"] = {
+                "name": args.optimizer,
+                "config": optimizer.resolve_config(args.optimizer_config),
+            }
         with open(metadata_path, "w", encoding="utf-8") as metadata_file:
             json.dump(payload, metadata_file, indent=2, sort_keys=True)
             metadata_file.write("\n")
