@@ -315,6 +315,7 @@ class JIRScheduler(itf.schd.Scheduler):
         input_idx: int,
         mtype: str | None = None,
         pad: bool = False,
+        alignment: int | None = None,
         root: str = DEFAULT_ROOT,
     ) -> None:
         assert mtype is None or mtype == "local"

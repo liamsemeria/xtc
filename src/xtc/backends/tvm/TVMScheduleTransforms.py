@@ -9,6 +9,50 @@ from typing_extensions import override
 import tvm
 import tvm.s_tir
 
+_GPU_DIM = {0: "x", 1: "y", 2: "z"}
+
+
+def distribute_async_copy(
+    sch: tvm.s_tir.Schedule,
+    cache_read_block: Any,
+    copy_ndim: int,
+    thread_extents: list[int],
+    copy_width: int,
+    vectorize: bool = True,
+) -> tvm.s_tir.Schedule:
+    """Distribute a global-to-shared cache-read copy across the gpu threads.
+
+    Fuse the last ``copy_ndim`` loops of the copy, split the fused loop by the
+    reversed thread geometry so each thread copies a disjoint chunk, and bind
+    the thread factors, threadIdx.x innermost for coalesced accesses.
+    Vectorize the innermost ``copy_width`` elements when ``vectorize``: the
+    cp.async lowering only accepts 4/8/16-byte accesses, and without this
+    every thread issues the whole tile copy.
+
+    Fall back to the plain per-thread copy when the loops do not split exactly
+    into the thread geometry.
+    """
+    try:
+        loops = list(sch.get_loops(cache_read_block))
+        # fuse is annotated *loops: list[LoopRV] in the tvm stubs
+        fused = (
+            loops[-1] if copy_ndim == 1 else cast(Any, sch).fuse(*loops[-copy_ndim:])
+        )
+        n_threads = len(thread_extents)
+        *factors, vec_loop = sch.split(
+            fused, factors=[None, *reversed(thread_extents), copy_width]
+        )
+        for idx, thread_loop in enumerate(factors[1:]):
+            # bind order reversed so threadIdx.x is innermost (coalesced)
+            dim = _GPU_DIM[n_threads - 1 - idx]
+            sch.bind(thread_loop, f"threadIdx.{dim}")
+        if vectorize:
+            sch.vectorize(vec_loop)
+    except Exception:
+        # keep the plain per-thread copy
+        pass
+    return sch
+
 
 def loop_partition_rebased(
     sch: tvm.s_tir.Schedule,

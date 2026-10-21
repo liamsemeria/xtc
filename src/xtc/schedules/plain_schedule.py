@@ -25,7 +25,7 @@ class PlainNodeSchedule:
     vectorization: list[str]
     parallelization: list[str]
     unrolling: dict[str, int]
-    packed_buffers: dict[str, list[tuple[int, str | None, bool]]]
+    packed_buffers: dict[str, list[tuple[int, str | None, bool, int | None]]]
     write_buffers: dict[str, list[str | None]]
     memory_mesh: dict[str, int]
     processor_mesh: dict[str, int]
@@ -113,7 +113,9 @@ class PlainNodeScheduler:
         self.vectorization_sizes: dict[str, int] = {}
         self.parallelization: list[str] = []
         self.unrolling: dict[str, int] = {}
-        self.packed_buffers: dict[str, list[tuple[int, str | None, bool]]] = {}
+        self.packed_buffers: dict[
+            str, list[tuple[int, str | None, bool, int | None]]
+        ] = {}
         self.write_buffers: dict[str, list[str | None]] = {}
         self.memory_mesh: dict[str, int] = {}
         self.processor_mesh: dict[str, int] = {}
@@ -235,12 +237,13 @@ class PlainNodeScheduler:
         input_idx: int,
         mtype: str | None = None,
         pad: bool = False,
+        alignment: int | None = None,
         root: str = DEFAULT_ROOT,
     ):
         pack_axis = make_loop_name(root, axis)
         if pack_axis not in self.packed_buffers:
             self.packed_buffers[pack_axis] = []
-        self.packed_buffers[pack_axis].append((input_idx, mtype, pad))
+        self.packed_buffers[pack_axis].append((input_idx, mtype, pad, alignment))
 
     def define_memory_mesh(self, axes: dict[str, int]):
         assert len(self.memory_mesh) == 0, "Memory mesh has already been defined"

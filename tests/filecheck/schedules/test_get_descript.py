@@ -39,6 +39,7 @@ sch.fuse_producer_at("I", 0)
 if "--tvm" in sys.argv:
     sch.buffer_at("J")
     sch.pack_at("K", 1, pad=True)
+    sch.pack_at("K", 0, alignment=4)
     sch.fuse_consumer_at("J")
 
 loop_nest = sch.get_loop_nest()
@@ -55,7 +56,7 @@ print(loop_nest.root_node.pretty_print())
 # CHECK-MLIR-NEXT:                 ...
 
 # CHECK-TVM:      loop J // parallelized, buffer, fuse_consumer
-# CHECK-TVM-NEXT:   loop K  // pack([(1, pad)])
+# CHECK-TVM-NEXT:   loop K  // pack([(1, pad), (0, align=4)])
 # CHECK-TVM-NEXT:     loop I  // fuse_producer(0)
 # CHECK-TVM-NEXT:       tile(J, 128)
 # CHECK-TVM-NEXT:         tile(I, 64)

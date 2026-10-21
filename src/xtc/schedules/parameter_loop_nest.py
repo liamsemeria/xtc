@@ -106,8 +106,10 @@ class ParameterLoopNestNode(Node["ParameterLoopNestNode"]):
         buffer_at: Buffer configuration per axis. Maps axis names to optional
             memory types (mtype). None means default memory type.
         pack_at: Pack configuration per axis. Maps axis names to tuples of
-            (input_idx, mtype, pad). input_idx is the input buffer index,
-            mtype is the memory type (None for default), pad enables padding.
+            (input_idx, mtype, pad, alignment). input_idx is the input buffer
+            index, mtype is the memory type (None for default), pad enables
+            padding, alignment is the number of elements per async copy
+            chunk (None for no async copy).
         constraints: List of generated constraints.
         fuse_producer_at: Producer fusion configuration per axis. Maps axis
             names to producer indices.
@@ -128,7 +130,7 @@ class ParameterLoopNestNode(Node["ParameterLoopNestNode"]):
     parallelize_parameters: dict[str, str] = field(default_factory=dict)
     unroll: dict[str, literal] = field(default_factory=dict)
     buffer_at: dict[str, str | None] = field(default_factory=dict)
-    pack_at: dict[str, list[tuple[int, str | None, bool | str]]] = field(
+    pack_at: dict[str, list[tuple[int, str | None, bool | str, int | None]]] = field(
         default_factory=dict
     )
     fuse_producer_at: dict[str, int] = field(default_factory=dict)
@@ -174,8 +176,13 @@ class ParameterLoopNestNode(Node["ParameterLoopNestNode"]):
         buffer_at = self.buffer_at
         pack_at = {
             a: [
-                (a1, a2, bool(sample[a3]) if isinstance(a3, str) else a3)
-                for (a1, a2, a3) in v
+                (
+                    a1,
+                    a2,
+                    bool(sample[a3]) if isinstance(a3, str) else a3,
+                    a4,
+                )
+                for (a1, a2, a3, a4) in v
             ]
             for a, v in self.pack_at.items()
         }
@@ -327,12 +334,14 @@ class ParameterLoopNestNode(Node["ParameterLoopNestNode"]):
                 annotations.append("buffer")
         if loop_name in self.pack_at:
             parts = []
-            for input_idx, mtype, pad in self.pack_at[loop_name]:
+            for input_idx, mtype, pad, alignment in self.pack_at[loop_name]:
                 part = "(" + str(input_idx)
                 if mtype is not None:
                     part += ", " + str(mtype)
                 if pad:
                     part += ", pad"
+                if alignment is not None:
+                    part += f", align={alignment}"
                 part += ")"
                 parts.append(part)
             annotations.append(f"pack([{', '.join(parts)}])")

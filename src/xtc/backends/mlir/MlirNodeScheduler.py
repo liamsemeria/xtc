@@ -79,9 +79,10 @@ class MlirNodeScheduler:
         input_idx: int,
         mtype: str | None = None,
         pad: bool = False,
+        alignment: int | None = None,
         root: str = DEFAULT_ROOT,
     ):
-        self._plain_sch.pack_at(axis, input_idx, mtype, pad, root)
+        self._plain_sch.pack_at(axis, input_idx, mtype, pad, alignment, root)
 
     def define_memory_mesh(self, axes: dict[str, int]):
         self._plain_sch.define_memory_mesh(axes)

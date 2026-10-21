@@ -20,6 +20,7 @@ from .TVMOps import (
 )
 from .TVMScheduleTransforms import (
     decompose_reduction_initializers,
+    distribute_async_copy,
     externalize_tile_below,
     loop_partition_rebased,
 )
@@ -90,6 +91,7 @@ class TVMSchedulableExprTIR(TVMSchedulableExpr):
         namespace = {
             "sch": sch,
             "decompose_reduction_initializers": decompose_reduction_initializers,
+            "distribute_async_copy": distribute_async_copy,
             "loop_partition_rebased": loop_partition_rebased,
             "externalize_tile_below": externalize_tile_below,
         }
