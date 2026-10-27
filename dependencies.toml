@@ -9,7 +9,7 @@ dependencies = [
     'xtc-build~=0.1.0',
     'pyyaml',
     'scikit-learn',
-    'xdsl~=0.74.0',
+    'xdsl~=0.73.0',
     'strictyaml',
     'tomlkit',
 ]
