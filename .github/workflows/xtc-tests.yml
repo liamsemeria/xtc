@@ -131,6 +131,11 @@ jobs:
         run: |
           brew install libomp x86_64-linux-gnu-binutils aarch64-elf-binutils
           export DYLD_LIBRARY_PATH="/opt/homebrew/opt/libomp/lib:${DYLD_LIBRARY_PATH}"
+      - name: Debug - use newer Xcode toolchain on macOS 14
+        if: steps.test-cache.outputs.hit != 'true' && matrix.os == 'macos-14'
+        run: |
+          test -n "${XCODE_16_DEVELOPER_DIR:-}"
+          echo "DEVELOPER_DIR=${XCODE_16_DEVELOPER_DIR}" >>"${GITHUB_ENV}"
       - name: Set up Python ${{ matrix.python-version }}
         if: steps.test-cache.outputs.hit != 'true'
         uses: actions/setup-python@v6
