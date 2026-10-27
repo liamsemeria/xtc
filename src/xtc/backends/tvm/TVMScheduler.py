@@ -26,6 +26,8 @@ from .TVMOps import TVMOperation
 # from op name to the TVM schedule string
 ScheduleImpl: TypeAlias = dict[str, str]
 _GPU_DIM = {0: "x", 1: "y", 2: "z"}
+# Storage scopes accepted by tvm cache_read/cache_write
+_TVM_MEM_SCOPES = {"global", "shared", "local", "warp", "shared.dyn"}
 
 
 class TVMScheduleEmitter(ABC):
@@ -71,14 +73,20 @@ class TVMScheduleEmitterTIR(TVMScheduleEmitter):
         if node.fuse_consumer_at:
             print(f"O_F0 = {sch}.get_consumers({block})[0]", file=outf)
         if node.pack_at:
-            inputs = list({inp[0]: None for inp in node.pack_at.values()})
-            for inp_idx in inputs:
+            scope_of = {
+                inp_idx: (mtype if mtype is not None else "global")
+                for inp in node.pack_at.values()
+                for inp_idx, mtype, _, _ in inp
+            }
+            for inp_idx, scope in scope_of.items():
                 print(
-                    f'I_R{inp_idx} = {sch}.cache_read({block}, {inp_idx}, "global")',
+                    f'I_R{inp_idx} = {sch}.cache_read({block}, {inp_idx}, "{scope}")',
                     file=outf,
                 )
         if node.buffer_at:
-            print(f'O_W0 = {sch}.cache_write({block}, 0, "global")', file=outf)
+            wscope = next(iter(node.buffer_at.values()))
+            wscope = wscope if wscope is not None else "global"
+            print(f'O_W0 = {sch}.cache_write({block}, 0, "{wscope}")', file=outf)
         if node.fuse_producer_at:
             producers = list({idx: None for idx in node.fuse_producer_at.values()})
             for prod_idx in producers:
@@ -121,17 +129,27 @@ class TVMScheduleEmitterTIR(TVMScheduleEmitter):
             for axis in node.buffer_at:
                 print(f"{sch}.reverse_compute_at(O_W0, {axis})", file=outf)
         if node.pack_at:
-            for axis, (inp_idx, mtype, pad) in node.pack_at.items():
-                print(f"{sch}.compute_at(I_R{inp_idx}, {axis})", file=outf)
-                dim, factor, offset = tvm_cache_read_factor_offset(
-                    self._op, inp_idx, pad
-                )
-                if factor != 0:
-                    print(
-                        f"{sch}.storage_align(I_R{inp_idx}, 0, ",
-                        f"axis={dim}, factor={factor}, offset={offset})",
-                        file=outf,
+            for axis, v in node.pack_at.items():
+                # FIXME: If the target is not nvgpu and is shared do not do the async copy
+                pipeline_async = False
+                for inp_idx, mtype, pad, alignment in v:
+                    print(f"{sch}.compute_at(I_R{inp_idx}, {axis})", file=outf)
+                    dim, factor, offset = tvm_cache_read_factor_offset(
+                        self._op, inp_idx, pad
                     )
+                    if factor != 0:
+                        print(
+                            f"{sch}.storage_align(I_R{inp_idx}, 0, ",
+                            f"axis={dim}, factor={factor}, offset={offset})",
+                            file=outf,
+                        )
+                    if mtype in ("shared", "shared.dyn") and alignment is not None:
+                        self._dump_async_copy_distribution(
+                            node, inp_idx, mtype, alignment
+                        )
+                        pipeline_async = True
+                if pipeline_async:
+                    self._dump_async_copy_annotations(node, axis)
         if node.fuse_producer_at:
             for axis, prod_idx in node.fuse_producer_at.items():
                 print(f"{sch}.compute_at(I_F{prod_idx}, {axis})", file=outf)
@@ -175,6 +193,103 @@ class TVMScheduleEmitterTIR(TVMScheduleEmitter):
                 )
                 self._dump_schedule_node(split_block, inner, sched, node.children[idx])
 
+    def _gpu_thread_extents(self, node: LoopNestNode) -> list[int]:
+        # Iteration count of each gpu_thread axis, in bind order.
+        extents: list[int] = []
+        for axis in node.gpu_thread:
+            extent: int | None = None
+            for chain in node.tiles.values():
+                names = list(chain)
+                if axis not in names:
+                    continue
+                idx = names.index(axis)
+                if idx + 1 < len(names):
+                    extent = chain[axis] // chain[names[idx + 1]]
+                else:
+                    extent = chain[axis]
+                break
+            if extent is None:
+                return []
+            extents.append(extent)
+        return extents
+
+    def _dump_async_copy_distribution(
+        self,
+        node: LoopNestNode,
+        input_idx: int,
+        mtype: str | None,
+        alignment: int | None,
+    ) -> None:
+        if mtype not in ("shared", "shared.dyn"):
+            return
+        if alignment is None:
+            return
+        if not node.gpu_thread:
+            return
+        extents = self._gpu_thread_extents(node)
+        if not extents:
+            return
+        input_spec = self._op.np_inputs_spec()[input_idx]
+        ndim = len(input_spec["shape"])
+        if ndim < 1:
+            return
+        # cp.async only supports 4, 8 and 16-byte copies
+        elt_size = np.dtype(input_spec["dtype"]).itemsize
+        assert alignment * elt_size in (4, 8, 16), (
+            f"pack_at alignment of input {input_idx} must copy 4, 8 or 16 "
+            f"bytes ({alignment} elements of {input_spec['dtype']} = "
+            f"{alignment * elt_size} bytes)"
+        )
+        # Vectorized compute accesses reinterpret the shared buffer element
+        # type (FlattenBuffer), which leaves the copy store and load with
+        # mismatched lanes and crashes the cp.async lowering, so keep the
+        # copy scalar then.
+        vectorize = not node.vectorize
+        sch = self._sch_var
+        print(
+            f"{sch} = distribute_async_copy("
+            f"{sch}, I_R{input_idx}, {ndim}, {extents}, {alignment}, "
+            f"vectorize={vectorize})",
+            file=self._outf,
+        )
+
+    def _dump_async_copy_annotations(self, node: LoopNestNode, axis: str) -> None:
+        # Annotate the pack loop so InjectSoftwarePipeline (in the s_tir
+        # pipeline) turns the async global->shared copies into a software
+        # pipeline; InjectPTXAsyncCopy then lowers them to cp.async.
+        packs = node.pack_at[axis]
+        sch = self._sch_var
+        outf = self._outf
+
+        def is_async(mtype: str | None, alignment: int | None) -> bool:
+            return mtype in ("shared", "shared.dyn") and alignment is not None
+
+        if not any(is_async(mtype, alignment) for _, mtype, _, alignment in packs):
+            # No shared, aligned copy: nothing to pipeline
+            return
+        if not node.interchange or axis == node.interchange[-1]:
+            # No loop below the pack axis: the stage counts below would
+            # not match the statements of the loop body
+            return
+        if (
+            axis in node.buffer_at
+            or axis in node.fuse_producer_at
+            or axis in node.fuse_consumer_at
+        ):
+            return
+        if any(baxis in node.gpu_thread for baxis in node.buffer_at):
+            return
+        stage = [
+            0 if is_async(mtype, alignment) else 1 for _, mtype, _, alignment in packs
+        ] + [1]
+        order = list(range(len(packs) + 1))
+        print(f'{sch}.annotate({axis}, "software_pipeline_stage", {stage})', file=outf)
+        print(f'{sch}.annotate({axis}, "software_pipeline_order", {order})', file=outf)
+        print(
+            f'{sch}.annotate({axis}, "software_pipeline_async_stages", [0])',
+            file=outf,
+        )
+
     @override
     def emit(self, scheduler: "TVMScheduler"):
         sched = scheduler.get_loop_nest()
@@ -186,9 +301,9 @@ class TVMScheduleEmitterTIR(TVMScheduleEmitter):
 def tvm_cache_read_factor_offset(
     op: TVMOperation, input_idx: int, pad: bool
 ) -> tuple[int, int, int]:
+    input_spec = op.np_inputs_spec()[input_idx]
     if not pad:
         return 0, 0, 0
-    input_spec = op.np_inputs_spec()[input_idx]
     if len(input_spec["shape"]) < 2:
         return 0, 0, 0
     # Assume for CPU common number of sets and line size for L1
@@ -326,14 +441,16 @@ class TVMScheduler(itf.schd.Scheduler):
     def backend(self) -> itf.back.Backend:
         return self._backend
 
-    @override
-    def schedule(self) -> itf.schd.Schedule:
+    def _emit_schedule_code(self) -> str:
         io = StringIO()
         emitter = TVMScheduleEmitterTIR(op=self._op, outf=io)
         emitter.emit(self)
-        sched = io.getvalue()
+        return io.getvalue()
+
+    @override
+    def schedule(self) -> itf.schd.Schedule:
         assert self._op.name is not None
-        schedule_impl = {self._op.name: sched}
+        schedule_impl = {self._op.name: self._emit_schedule_code()}
         return TVMSchedule(scheduler=self, schedule_impl=schedule_impl)
 
     @override
@@ -358,7 +475,7 @@ class TVMScheduler(itf.schd.Scheduler):
     def buffer_at(
         self, axis: str, mtype: str | None = None, root: str = DEFAULT_ROOT
     ) -> None:
-        assert mtype is None or mtype == "global"
+        assert mtype is None or mtype in _TVM_MEM_SCOPES
         self._plain_sch.buffer_at(axis, mtype, root)
 
     @override
@@ -368,11 +485,13 @@ class TVMScheduler(itf.schd.Scheduler):
         input_idx: int,
         mtype: str | None = None,
         pad: bool = False,
+        alignment: int | None = None,
         root: str = DEFAULT_ROOT,
     ) -> None:
-        assert mtype is None or mtype == "global"
+        assert mtype is None or mtype in _TVM_MEM_SCOPES
         assert input_idx >= 0 and input_idx < len(self._op.np_inputs_spec())
-        self._plain_sch.pack_at(axis, input_idx, mtype, pad, root)
+        assert alignment is None or alignment > 0
+        self._plain_sch.pack_at(axis, input_idx, mtype, pad, alignment, root)
 
     @override
     def vectorize(

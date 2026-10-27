@@ -151,18 +151,21 @@ class MlirScheduler(itf.schd.Scheduler):
         input_idx: int,
         mtype: str | None = None,
         pad: bool = False,
+        alignment: int | None = None,
         root: str = DEFAULT_ROOT,
     ) -> None:
         # The current implemntation exclusively rely on SDist, but upstream
         # transform dialect may be used for some cases.
         assert mtype is None or mtype == "global" or mtype == "local"
-        if pad:
+        if pad or alignment is not None:
             return  # TODO: not implemented for now
         if mtype is None or mtype == "global":
             self._require_extension("sdist", weak=True)
         else:
             self._require_extension("sdist")
-        self._current_scheduler.pack_at(axis, input_idx, mtype, pad, root=root)
+        self._current_scheduler.pack_at(
+            axis, input_idx, mtype, pad, alignment, root=root
+        )
 
     @override
     def vectorize(

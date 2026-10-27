@@ -52,6 +52,7 @@ from .TVMOps import (
 )
 
 import tvm
+import tvm.s_tir
 import tvm_ffi
 
 
@@ -62,6 +63,40 @@ __all__ = [
 
 TVM_VERSION = Version(tvm.__version__.split("+", 1)[0])
 assert TVM_VERSION >= Version("0.26")
+
+
+_CUDA_ASYNC_PIPELINE = "xtc_cuda_async"
+
+
+def _cuda_async_pipeline() -> Any:
+    # Use the transform pass InjectPTXAsyncCopy to add async copy to nvgpu
+    (
+        s_tir_pipeline,
+        finalize_host_passes,
+        finalize_device_passes,
+    ) = cast("tuple[Any, Any, Any]", tvm.tirx.get_tir_pipeline("s_tir"))
+
+    def _pipeline(
+        mod: tvm.ir.IRModule, _ctx: tvm.transform.PassContext
+    ) -> tvm.ir.IRModule:
+        mod = s_tir_pipeline(mod)
+        return cast(tvm.ir.IRModule, tvm.s_tir.transform.InjectPTXAsyncCopy()(mod))
+
+    return (
+        tvm.transform.module_pass(_pipeline, opt_level=0),
+        finalize_host_passes,
+        finalize_device_passes,
+    )
+
+
+def _register_cuda_async_pipeline() -> None:
+    # Register the pipeline under its name in tvm's global pipeline map,
+    # mirroring the extension pattern of tvm/s_tir/pipeline.py. Idempotent.
+    from tvm.tirx import compilation_pipeline as tir_pipeline
+
+    pipeline_map = cast(Any, tir_pipeline.PIPELINE_MAP)
+    if _CUDA_ASYNC_PIPELINE not in pipeline_map:
+        pipeline_map[_CUDA_ASYNC_PIPELINE] = _cuda_async_pipeline
 
 
 class TVMCompiler(itf.comp.Compiler):
@@ -422,6 +457,8 @@ class TVMCompiler(itf.comp.Compiler):
         # - for static compilation as soon as the tvm runtime is provided
         # - for dynamic loading from python
         runtime_kwargs: dict[str, Any] = {}
+        if target["kind"] == "cuda":
+            runtime_kwargs["pipeline"] = _CUDA_ASYNC_PIPELINE
         return {
             "target": target,
             **runtime_kwargs,
@@ -439,6 +476,8 @@ class TVMCompiler(itf.comp.Compiler):
             )
         with tvm.transform.PassContext(opt_level=3, config=config):
             assert isinstance(sch, TVMScheduledExprTIR)
+            if target["kind"] == "cuda":
+                _register_cuda_async_pipeline()
             func = sch._schedule.mod[sch.schedulable.expr.name]
             func = func.with_attr("global_symbol", cname)
             mod = tvm.IRModule({cname: func})

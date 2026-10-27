@@ -385,15 +385,19 @@ class ScheduleInterpreter:
             node.buffer_at[loop_name] = annotations.buffer
 
         if annotations.pack_specified and annotations.pack is not None:
-            input_matrix, mtype, pad = annotations.pack
+            input_matrix, mtype, pad, alignment = annotations.pack
             if isinstance(input_matrix, str):
                 idx = self.abstract_matrix.index(input_matrix)
                 if idx == len(self.abstract_matrix) - 1:
                     node.buffer_at[loop_name] = mtype
                 else:
-                    node.pack_at[loop_name] = (idx, mtype, pad)
+                    node.pack_at.setdefault(loop_name, []).append(
+                        (idx, mtype, pad, alignment)
+                    )
             else:
-                node.pack_at[loop_name] = (input_matrix, mtype, pad)
+                node.pack_at.setdefault(loop_name, []).append(
+                    (input_matrix, mtype, pad, alignment)
+                )
 
         if annotations.fuse_producer is not None:
             node.fuse_producer_at[loop_name] = annotations.fuse_producer
@@ -551,8 +555,16 @@ class Descript:
         for axis, mtype in node.buffer_at.items():
             scheduler.buffer_at(axis, mtype=mtype, root=root)
 
-        for axis, (input_idx, mtype, pad) in node.pack_at.items():
-            scheduler.pack_at(axis, input_idx, mtype=mtype, pad=pad, root=root)
+        for axis, packs in node.pack_at.items():
+            for input_idx, mtype, pad, alignment in packs:
+                scheduler.pack_at(
+                    axis,
+                    input_idx,
+                    mtype=mtype,
+                    pad=pad,
+                    alignment=alignment,
+                    root=root,
+                )
 
         for axis, input_idx in node.fuse_producer_at.items():
             scheduler.fuse_producer_at(axis, input_idx, root=root)

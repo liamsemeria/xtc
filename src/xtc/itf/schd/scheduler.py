@@ -224,6 +224,7 @@ class Scheduler(ABC):
         input_idx: int,
         mtype: str | None = None,
         pad: bool = False,
+        alignment: int | None = None,
         root: str = DEFAULT_ROOT,
     ) -> None:
         """Create a packed read buffer at a given level.
@@ -233,12 +234,17 @@ class Scheduler(ABC):
         to the local memory at this level.
         When pad is true, a padding strategy is applied in order to reduce
         sets/banks conflicts.
+        When alignment is set on a gpu pack, the global-to-shared copy is
+        distributed across the gpu threads and vectorized to that many
+        elements per chunk, lowered to cp.async (the chunk must copy 4, 8
+        or 16 bytes). Without an alignment there is no async copy.
 
         Args:
             axis: localisation of the write buffer
             input_idx: input buffer index for the scheduled computation
             mtype: buffer memory type for the allocation
             pad: whether to add padding or not
+            alignment: number of elements per async copy chunk
             root: the parent split (or the operator's absolute root)
         """
         ...

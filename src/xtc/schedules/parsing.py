@@ -36,7 +36,9 @@ class Annotations:
         buffer: The memory type for the buffer. None means default memory type.
             Only meaningful when buffer_specified is True.
         buffer_specified: True if buffer was explicitly requested.
-        pack: Pack configuration as (input_idx, mtype, pad). mtype is None for default.
+        pack: Pack configuration as (input_idx, mtype, pad, alignment). mtype is
+            None for default, alignment is the number of elements per async
+            copy chunk (None for no async copy).
             Only meaningful when pack_specified is True.
         pack_specified: True if pack was explicitly requested.
         fuse_producer: the input_idx for the operand to fuse, None if not requested.
@@ -49,7 +51,7 @@ class Annotations:
     parallelize: bool | str = False
     buffer: str | None = None
     buffer_specified: bool = False
-    pack: tuple[literal, str | None, bool | str] | None = None
+    pack: tuple[literal, str | None, bool | str, int | None] | None = None
     pack_specified: bool = False
     fuse_producer: int | None = None
     fuse_consumer: bool | None = False
@@ -180,7 +182,7 @@ class ScheduleParser:
         parallelize: bool | str = False
         buffer: str | None = None
         buffer_specified = False
-        pack: tuple[literal, str | None, bool | str] | None = None
+        pack: tuple[literal, str | None, bool | str, int | None] | None = None
         pack_specified = False
         fuse_producer: int | None = None
         fuse_consumer: bool = False
@@ -352,18 +354,19 @@ class ScheduleParser:
 
     def _parse_pack_param(
         self, param: Any, context: str
-    ) -> tuple[literal, str | None, bool | str] | None:
-        """Parse pack parameter into (input_idx, mtype, pad) tuple."""
+    ) -> tuple[literal, str | None, bool | str, int | None] | None:
+        """Parse pack parameter into (input_idx, mtype, pad, alignment) tuple."""
 
         if param is None:
-            return (context, None, False)
+            return (context, None, False, None)
 
-        if not isinstance(param, (list, tuple)) or len(param) != 3:
+        if not isinstance(param, (list, tuple)) or len(param) not in (3, 4):
             raise ScheduleParseError(
-                f'`{{"pack" = {param}}}` on {context}: pack parameter should be a tuple (input_idx, mtype, pad).'
+                f'`{{"pack" = {param}}}` on {context}: pack parameter should be a tuple (input_idx, mtype, pad[, alignment]).'
             )
 
-        input_idx, mtype, pad = param
+        input_idx, mtype, pad = param[:3]
+        alignment = param[3] if len(param) == 4 else None
 
         if not isinstance(input_idx, literal):
             raise ScheduleParseError(
@@ -380,11 +383,16 @@ class ScheduleParser:
                 f'`{{"pack" = {param}}}` on {context}: pad should be a boolean.'
             )
 
+        if not isinstance(alignment, int | None):
+            raise ScheduleParseError(
+                f'`{{"pack" = {param}}}` on {context}: alignment should be an integer.'
+            )
+
         # Convert "default" to None for mtype
         if mtype == "default":
             mtype = None
 
-        return (input_idx, mtype, pad)
+        return (input_idx, mtype, pad, alignment)
 
     def _parse_split_syntax(
         self, declaration: str
