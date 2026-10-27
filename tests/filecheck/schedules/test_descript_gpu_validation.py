@@ -1,9 +1,9 @@
-# REQUIRES: mlir-target=nvgpu
 # RUN: not python %s --overlap 2>&1 | filecheck %s --check-prefix=CHECK-OVERLAP
 # RUN: not python %s --no-block 2>&1 | filecheck %s --check-prefix=CHECK-NO-BLOCK
 # RUN: not python %s --block-tile 2>&1 | filecheck %s --check-prefix=CHECK-BLOCK-TILE
 # RUN: not python %s --thread-axis 2>&1 | filecheck %s --check-prefix=CHECK-THREAD-AXIS
 # RUN: not python %s --block-not-outermost 2>&1 | filecheck %s --check-prefix=CHECK-OUTERMOST
+# REQUIRES: mlir-target=nvgpu
 
 import sys
 import xtc.graphs.xtc.op as O
@@ -41,7 +41,7 @@ if "--overlap" in sys.argv:
         }
     )
 
-# CHECK-OVERLAP: Loops I appear in both gpu_block and gpu_thread.
+# CHECK-OVERLAP: Loop(s) I appear in both gpu_block and gpu_thread. gpu_thread needs to use a tile instead.
 
 elif "--no-block" in sys.argv:
     # Threads need at least one block-mapped loop
@@ -53,7 +53,7 @@ elif "--no-block" in sys.argv:
         }
     )
 
-# CHECK-NO-BLOCK: Need gpu_block to be specified for either gpu_thread or gpu_lane or gpu_warp.
+# CHECK-NO-BLOCK: gpu_block needs to be specified for either gpu_thread, gpu_lane or gpu_warp. 
 
 elif "--block-tile" in sys.argv:
     # Blocks need to be mapped to base axes, not tiles
@@ -67,7 +67,7 @@ elif "--block-tile" in sys.argv:
         }
     )
 
-# CHECK-BLOCK-TILE: Need gpu_block to be an axis and not a tile
+# CHECK-BLOCK-TILE: gpu_block must only contain axes, not tiles 
 
 elif "--thread-axis" in sys.argv:
     # Threads need to be mapped to tiles, not base axes
@@ -79,7 +79,7 @@ elif "--thread-axis" in sys.argv:
         }
     )
 
-# CHECK-THREAD-AXIS: gpu_thread need to be a tile
+# CHECK-THREAD-AXIS: gpu_thread needs to be a tile 
 
 elif "--block-not-outermost" in sys.argv:
     # The block-mapped loops need to come first in the loop order
@@ -93,4 +93,4 @@ elif "--block-not-outermost" in sys.argv:
         }
     )
 
-# CHECK-OUTERMOST: gpu_block needs to be in the most outermost loop
+# CHECK-OUTERMOST: gpu_block must contain the outermost loop 

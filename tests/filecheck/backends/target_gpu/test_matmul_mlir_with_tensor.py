@@ -58,7 +58,7 @@ print(f"CODE: {res}")
 # CHECK-NEXT:      transform.yield 
 # CHECK-NEXT:    }
 # CHECK-NEXT:    transform.named_sequence @_post_bufferize(%arg0: !transform.any_op {transform.readonly}) {
-# CHECK-NEXT:      %0 = transform.structured.match attributes {"./i", mapping = [#gpu.block<x>, #gpu.block<y>]} in %arg0 : (!transform.any_op) -> !transform.any_op
+# CHECK-NEXT:      %0 = transform.structured.match attributes {"./j", mapping = [#gpu.block<x>, #gpu.block<y>]} in %arg0 : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %1 = transform.gpu.map_forall_to_blocks %0 generate_gpu_launch : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %2 = transform.gpu.map_nested_forall_to_threads %1 block_dims = [4, 4, 1] : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      transform.yield 
@@ -71,7 +71,7 @@ print(f"CODE: {res}")
 # CHECK-NEXT:      transform.annotate %loops_1 "./j" : !transform.any_op
 # CHECK-NEXT:      %1 = transform.structured.match attributes {__xtc_id_C_} in %arg0 : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %tiled_op, %forall_op = transform.structured.tile_using_forall %1 tile_sizes [128, 128, 0](mapping = [#gpu.block<x>, #gpu.block<y>]) : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-# CHECK-NEXT:      transform.annotate %forall_op "./i" : !transform.any_op
+# CHECK-NEXT:      transform.annotate %forall_op "./j" : !transform.any_op
 # CHECK-NEXT:      %tiled_op_2, %forall_op_3 = transform.structured.tile_using_forall %tiled_op tile_sizes [32, 32, 0](mapping = [#gpu.thread<x>, #gpu.thread<y>]) : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
 # CHECK-NEXT:      transform.annotate %forall_op_3 "./i1" : !transform.any_op
 # CHECK-NEXT:      %tiled_linalg_op_4, %loops_5 = transform.structured.tile_using_for %tiled_op_2 tile_sizes [0, 0, 64] : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
@@ -170,7 +170,7 @@ print(f"CODE: {res}")
 # CHECK-NEXT:        scf.forall.in_parallel {
 # CHECK-NEXT:          tensor.parallel_insert_slice %5 into %arg5[%3, %4] [128, 128] [1, 1] : tensor<128x128xf32> into tensor<1024x1024xf32>
 # CHECK-NEXT:        }
-# CHECK-NEXT:      } {"./i", mapping = [#gpu.block<x>, #gpu.block<y>]}
+# CHECK-NEXT:      } {"./j", mapping = [#gpu.block<x>, #gpu.block<y>]}
 # CHECK-NEXT:      bufferization.materialize_in_destination %2 in restrict writable %arg2 : (tensor<1024x1024xf32>, memref<1024x1024xf32>) -> ()
 # CHECK-NEXT:      return
 # CHECK-NEXT:    }
@@ -179,7 +179,7 @@ print(f"CODE: {res}")
 # CHECK-NEXT:      transform.yield 
 # CHECK-NEXT:    }
 # CHECK-NEXT:    transform.named_sequence @_post_bufferize(%arg0: !transform.any_op {transform.readonly}) {
-# CHECK-NEXT:      %0 = transform.structured.match attributes {"./i", mapping = [#gpu.block<x>, #gpu.block<y>]} in %arg0 : (!transform.any_op) -> !transform.any_op
+# CHECK-NEXT:      %0 = transform.structured.match attributes {"./j", mapping = [#gpu.block<x>, #gpu.block<y>]} in %arg0 : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %1 = transform.gpu.map_forall_to_blocks %0 generate_gpu_launch : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      %2 = transform.gpu.map_nested_forall_to_threads %1 block_dims = [4, 4, 1] : (!transform.any_op) -> !transform.any_op
 # CHECK-NEXT:      transform.yield 
