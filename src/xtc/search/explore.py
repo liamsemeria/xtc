@@ -551,6 +551,19 @@ class Exploration:
             restored = read_csv_results(
                 args.output, strategy.sample_names, args.backends[0]
             )
+            # Rewind an incomplete last batch, it is evaluated again from the
+            # same optimizer state so that the run continues as if not paused
+            n_partial = len(restored) % args.batch
+            if n_partial:
+                logger.info(
+                    "Resume: rewinding %d samples of the incomplete last batch",
+                    n_partial,
+                )
+                if args.csv_callback is not None:
+                    args.csv_callback.drop_samples(
+                        [x for x, _ in restored[-n_partial:]]
+                    )
+                restored = restored[:-n_partial]
             restored_x = [x for x, _ in restored]
             restored_y = [peak_time / time for _, time in restored]
         n_restored = len(restored_x)
@@ -562,12 +575,10 @@ class Exploration:
                 args.trials,
             )
         optimizer = Optimizers.from_name(args.optimizer)
-        # Offset the seed by the number of restored samples so that a resumed
-        # run does not replay the candidates of the previous run
         opt = optimizer(
             strategy.sample,
             args.batch,
-            args.seed + n_restored,
+            args.seed,
             args.optimizer_config,
         )
         opt.restore(restored_x, restored_y)

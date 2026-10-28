@@ -46,6 +46,8 @@ class Optimizer(ABC):
 
         Called once before the first suggest() when resuming an exploration,
         so that the optimizer continues from the observations of a previous run.
+        With the same seed, the random draws of the previous run are replayed
+        so that the resumed run continues the same sequence of candidates.
 
         Args:
             x: the samples that were evaluated in the previous run

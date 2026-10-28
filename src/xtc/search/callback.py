@@ -162,6 +162,32 @@ class CSVCallback(ResultCallBack):
                     continue
                 self._seen_keys.add((backend, sample))
 
+    def drop_samples(self, samples: Sequence[Sample]) -> None:
+        """Removes the rows of the given samples from the output file.
+
+        Rows are removed for all backends, and the samples are recorded again
+        if evaluated later on.
+        """
+        drop = {tuple(int(v) for v in x) for x in samples}
+        num = len(self._sample_names)
+
+        def keep(row: list[str]) -> bool:
+            try:
+                return tuple(int(v) for v in row[:num]) not in drop
+            except ValueError:
+                return True
+
+        self._outf.close()
+        with open(self._fname, newline="") as infile:
+            rows = [row for row in csv.reader(infile, delimiter=",") if keep(row)]
+        tmp_fname = f"{self._fname}.tmp"
+        with open(tmp_fname, "w", newline="") as outf:
+            csv.writer(outf, delimiter=",").writerows(rows)
+        os.replace(tmp_fname, self._fname)
+        self._seen_keys = {key for key in self._seen_keys if key[1] not in drop}
+        self._outf = open(self._fname, "a", newline="")
+        self._writer = csv.writer(self._outf, delimiter=",")
+
     def _sample_key(self, x: Sample, backend: str) -> tuple[str, tuple[int, ...]]:
         return backend, tuple(int(v) for v in x)
 

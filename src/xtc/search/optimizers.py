@@ -51,8 +51,15 @@ class BaseOptimizer(Optimizer):
     def restore(self, x: list[VecSample], y: list[float]):
         if not x:
             return
+        # Replay the random draws of each batch of the previous run, so that
+        # the resumed run continues the same sequence of candidates
+        n_batches = -(-len(x) // self.batch)
+        for i in range(n_batches):
+            self._replay_batch(i * self.batch)
         self.observe(x, y)
-        logger.info(f"restored {len(x)} samples, seed: {self.seed}")
+        logger.info(
+            f"restored {len(x)} samples, replayed {n_batches} batches, seed: {self.seed}"
+        )
 
     @override
     def finished(self):
@@ -61,9 +68,15 @@ class BaseOptimizer(Optimizer):
             f"{self.n_redraws} redraws"
         )
 
+    def _replay_batch(self, n_observed: int):
+        """Replays the random draws of a suggest() made after n_observed samples."""
+        self._next_seed()
+
+    def _next_seed(self) -> int:
+        return self.rng.randint(0, 2**32 - 1)
+
     def _sample(self, num: int) -> list[VecSample]:
-        seed = self.rng.randint(0, 2**32 - 1)
-        return list(self.sample_fn(num, seed))
+        return list(self.sample_fn(num, self._next_seed()))
 
     def _sample_unseen(self, num: int, need: int) -> list[VecSample]:
         """Samples num candidates that were not already evaluated.
@@ -201,6 +214,13 @@ class RandomForestOptimizer(BaseOptimizer):
         if update_n > self.update_last:
             self.rf.fit(self.X[:update_n], self.y[:update_n])
             self.update_last = update_n
+
+    @override
+    def _replay_batch(self, n_observed: int):
+        super()._replay_batch(n_observed)
+        if n_observed < self.update_first:
+            # Warm-up batches also draw their random choices
+            self.rng.choices([None], k=self.batch)
 
     @override
     def restore(self, x: list[VecSample], y: list[float]):

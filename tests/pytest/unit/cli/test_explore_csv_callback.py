@@ -180,7 +180,11 @@ def test_read_csv_results_missing_or_empty_file(tmp_path: Path):
 
 
 def _run_iterative(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, trials: int, resume: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    trials: int,
+    resume: bool,
+    optimizer: str = "random-forest-default",
 ) -> list[list[int]]:
     """Runs an iterative search with a fake evaluation, returns evaluated samples."""
     evaluated: list[list[int]] = []
@@ -204,7 +208,7 @@ def _run_iterative(
         ExplorationConfig(
             node="matmul",
             search="iterative",
-            optimizer="random-forest-default",
+            optimizer=optimizer,
             optimizer_config=str(config),
             trials=trials,
             batch=4,
@@ -236,6 +240,37 @@ def test_iterative_resume_runs_remaining_trials(
     recorded = read_csv_results(str(tmp_path / "results.csv"), names, "mlir")
     new = {tuple(x) for x in second} - {tuple(x) for x in first}
     assert len(recorded) == len(first) + len(new)
+
+
+@pytest.mark.parametrize("optimizer", ["random-forest-default", "random-forest-ucb"])
+@pytest.mark.parametrize("pause", [4, 6, 8, 16, 19])
+def test_iterative_resume_matches_uninterrupted_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, optimizer: str, pause: int
+):
+    uninterrupted_dir = tmp_path / "uninterrupted"
+    interrupted_dir = tmp_path / "interrupted"
+    uninterrupted_dir.mkdir()
+    interrupted_dir.mkdir()
+    uninterrupted = _run_iterative(
+        uninterrupted_dir, monkeypatch, trials=24, resume=False, optimizer=optimizer
+    )
+    first = _run_iterative(
+        interrupted_dir, monkeypatch, trials=pause, resume=False, optimizer=optimizer
+    )
+    second = _run_iterative(
+        interrupted_dir, monkeypatch, trials=24, resume=True, optimizer=optimizer
+    )
+    # Same samples before the pause, then the same suggestions after the resume,
+    # which requires both the sampling state and the model state to be restored.
+    # An incomplete last batch (batch is 4) is evaluated again on resume.
+    rewind = pause - pause % 4
+    assert first == uninterrupted[:pause]
+    assert second == uninterrupted[rewind:]
+
+    names = ["x0", "x1", "x2"]
+    assert read_csv_results(
+        str(interrupted_dir / "results.csv"), names, "mlir"
+    ) == read_csv_results(str(uninterrupted_dir / "results.csv"), names, "mlir")
 
 
 def test_iterative_resume_with_all_trials_done_evaluates_nothing(
