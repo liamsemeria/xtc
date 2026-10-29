@@ -131,11 +131,6 @@ jobs:
         run: |
           brew install libomp x86_64-linux-gnu-binutils aarch64-elf-binutils
           export DYLD_LIBRARY_PATH="/opt/homebrew/opt/libomp/lib:${DYLD_LIBRARY_PATH}"
-      - name: Debug - use newer Xcode toolchain on macOS 14
-        if: steps.test-cache.outputs.hit != 'true' && matrix.os == 'macos-14'
-        run: |
-          test -n "${XCODE_16_DEVELOPER_DIR:-}"
-          echo "DEVELOPER_DIR=${XCODE_16_DEVELOPER_DIR}" >>"${GITHUB_ENV}"
       - name: Set up Python ${{ matrix.python-version }}
         if: steps.test-cache.outputs.hit != 'true'
         uses: actions/setup-python@v6
@@ -152,6 +147,38 @@ jobs:
           python -c 'import sys; print(sys.version)'
           pip list
           env | sort
+      - name: Debug - lit-c OpenMP wrong results on macOS 14
+        if: steps.test-cache.outputs.hit != 'true' && matrix.os == 'macos-14'
+        continue-on-error: true
+        env:
+          XTC_MLIR_TARGET: c
+        run: |
+          set -x
+          sysctl -n hw.ncpu machdep.cpu.brand_string
+          cc --version
+          brew info libomp | head -3
+          python -c 'from xtc.utils.ext_tools import get_openmp_cflags, get_library_path; print("omp cflags:", get_openmp_cflags("cc")); print("omp lib:", get_library_path("omp"))'
+          T=tests/filecheck/backends/tensor_dialect/test_pad_conv2d_relu_mlir_tensor_fused.py
+          for n in 1 2 3; do
+            echo "=== OMP_NUM_THREADS=$n"
+            OMP_NUM_THREADS=$n python "$T" 2>&1 | grep '^CODE:' || true
+          done
+          echo "=== default threads, 5 repeats"
+          for i in 1 2 3 4 5; do python "$T" 2>&1 | grep '^CODE:' || true; done
+          echo "=== nested parallelism disabled"
+          OMP_MAX_ACTIVE_LEVELS=1 python "$T" 2>&1 | grep '^CODE:' || true
+          echo "=== keep generated C and check OpenMP symbols"
+          mkdir -p artifacts/debug-omp && cd artifacts/debug-omp
+          sed 's/print_bufferization_ir=True,/print_bufferization_ir=True, save_temps=True,/' "../../$T" > t.py
+          python t.py 2>&1 | grep '^CODE:' || true
+          otool -L save_temps_dir/*.o *.dylib 2>/dev/null || true
+          nm save_temps_dir/*.o | grep -i -E 'omp|kmp' || true
+      - name: Upload debug artifacts
+        if: matrix.os == 'macos-14'
+        uses: actions/upload-artifact@v5
+        with:
+          name: debug-omp-macos14
+          path: artifacts/debug-omp
       - name: Run Checks
         if: steps.test-cache.outputs.hit != 'true'
         run: |
