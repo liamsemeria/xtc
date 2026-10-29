@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 The XTC Project Authors
 #
-from pathlib import Path
 from typing_extensions import override
 
 from xtc.utils.ext_tools import (
@@ -53,11 +52,6 @@ class MlirCTarget(MlirCpuTarget):
             input_pipe=str(mlir_program.mlir_module),
         )
         assert codegen_c_process.returncode == 0
-        # DEBUG: Apple clang does not workshare "omp loop", try "omp for"
-        c_src = Path(c_dump_file).read_text()
-        Path(c_dump_file).write_text(
-            c_src.replace("# pragma omp loop", "# pragma omp for")
-        )
 
         cc_pic = ["-fPIC"] if self._config.shared_lib else []
         cc_crt_inc = [f"-I{self._config.mlir_install_dir}/runtime/include"]
