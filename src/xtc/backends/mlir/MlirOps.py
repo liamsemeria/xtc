@@ -20,7 +20,7 @@ from xdsl.dialects.builtin import (
     AffineMapAttr,
 )
 from xdsl.ir import Block, BlockArgument, Region
-from xdsl.ir.affine import AffineMap
+from xdsl.ir.affine import AffineConstantExpr, AffineDimExpr, AffineMap
 from xdsl.irdl import irdl_op_definition
 from xdsl.builder import ImplicitBuilder
 
@@ -578,6 +578,121 @@ class MlirOperatorRelu(MlirOperator):
         return (dtype,)
 
 
+def _broadcast_map(inp_shape: Sequence[int], out_shape: Sequence[int]) -> AffineMap:
+    # Align shapes on trailing dims, broadcast unit dims are indexed by 0
+    offset = len(out_shape) - len(inp_shape)
+    results = [
+        AffineConstantExpr(0)
+        if size == 1 and out_shape[offset + pos] != 1
+        else AffineDimExpr(offset + pos)
+        for pos, size in enumerate(inp_shape)
+    ]
+    return AffineMap(len(out_shape), 0, tuple(results))
+
+
+class MlirOperatorElementwiseBinary(MlirOperator):
+    # Like relu, a single dim is exposed: scheduling it only acts on the
+    # outermost loop of the generic, and may silently do nothing.
+    AXES = "i"
+    KINDS = "P"
+    BODY_OP: Any = None
+
+    @classmethod
+    @override
+    def args_from_operation(
+        cls, xtc_op: Operation, args: tuple[Any, ...]
+    ) -> tuple[Any, ...]:
+        _require_natural_layouts(xtc_op)
+        inps_shapes = tuple(
+            cast(XTCTensorType, typ).constant_shape for typ in xtc_op.inputs_types
+        )
+        out_shape = cast(XTCTensorType, xtc_op.outputs_types[0]).constant_shape
+        return (*args, inps_shapes, out_shape)
+
+    @override
+    def dims(self, kind: str = "") -> tuple[str, ...]:
+        return self._dims(kind)
+
+    @override
+    def dims_sizes(self) -> dict[str, int]:
+        i, _, _, _ = self.args
+        return {"i": i}
+
+    @override
+    def generate_op(
+        self, block: Block | None = None, args: Sequence[BlockArgument] = []
+    ) -> tuple[Block, OpAttrs]:
+        _, dtype, inps_shapes, out_shape = self.args
+        elt_type = ELT_TYPES[dtype]
+        if block is None:
+            ops_types = [
+                self.op_type(elt_type, shape) for shape in [*inps_shapes, out_shape]
+            ]
+            block = Block(arg_types=ops_types)
+            args = block.args
+        assert len(args) == 3
+        assert all(isinstance(arg.type, self.op_type) for arg in args)
+        rank = len(out_shape)
+        with ImplicitBuilder(block):
+            result = (args[2].type,) if self.op_type == TensorType else ()
+            block_in = Block(arg_types=[elt_type, elt_type, elt_type])
+            with ImplicitBuilder(block_in):
+                res = self.BODY_OP(block_in.args[0], block_in.args[1])
+                linalg.YieldOp(res)
+            generic = linalg.GenericOp(
+                inputs=(args[0], args[1]),
+                outputs=(args[2],),
+                body=Region([block_in]),  # type: ignore # mypy issue with dataclass
+                indexing_maps=[
+                    AffineMapAttr(_broadcast_map(inps_shapes[0], out_shape)),
+                    AffineMapAttr(_broadcast_map(inps_shapes[1], out_shape)),
+                    AffineMapAttr(AffineMap.identity(rank)),
+                ],
+                iterator_types=[StringAttr("parallel")] * rank,
+                result_types=result,
+            )
+        generic_node_id = f"{self.name}"
+        generic.attributes[f"__xtc_id_{generic_node_id}_"] = UnitAttr()
+        attrs = {
+            "nodes_map": {
+                generic_node_id: generic,
+            },
+            "dims_sizes": [
+                self.dims_sizes(),
+            ],
+            "output_nodes": [generic],
+        }
+        return block, attrs
+
+    @override
+    def inputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        return self.args[2]
+
+    @override
+    def inputs_types(self) -> tuple[str, ...]:
+        dtype = self.args[1]
+        return dtype, dtype
+
+    @override
+    def outputs_dims(self) -> tuple[tuple[int, ...], ...]:
+        return (self.args[3],)
+
+    @override
+    def outputs_types(self) -> tuple[str, ...]:
+        dtype = self.args[1]
+        return (dtype,)
+
+
+class MlirOperatorAdd(MlirOperatorElementwiseBinary):
+    DEFAULT_NAME = "add"
+    BODY_OP = arith.AddfOp
+
+
+class MlirOperatorMul(MlirOperatorElementwiseBinary):
+    DEFAULT_NAME = "mul"
+    BODY_OP = arith.MulfOp
+
+
 class MlirOperatorPad(MlirOperator):
     DEFAULT_NAME = "pad"
     AXES = "ijklmnopqrstuvwxyz"
@@ -896,6 +1011,8 @@ class MlirOperators:
     matmul = MlirOperatorMatmul
     conv2d = MlirOperatorConv2D
     relu = MlirOperatorRelu
+    add = MlirOperatorAdd
+    mul = MlirOperatorMul
     pad2d = MlirOperatorPad2D
     unpad = MlirOperatorUnpad
     pad = MlirOperatorPad
